@@ -8,6 +8,8 @@ import os
 import random
 import socket
 from qiskit import QuantumCircuit
+import uuid
+import time
 
 # Set template_folder to current directory to find ui.html
 app = Flask(__name__, template_folder=os.getcwd())
@@ -642,6 +644,136 @@ def decrypt_message():
         decrypted_message = "<decryption failed>"
 
     return jsonify({"decrypted_message": decrypted_message})
+
+
+# ---------------------------------------------------------------------------
+# QChat New API Endpoints
+# ---------------------------------------------------------------------------
+
+chat_messages = []
+shared_key_str = ""
+
+def _xor_encrypt(plaintext, key_str):
+    if not key_str:
+        return "", "", "", "", ""
+    msg_bytes = plaintext.encode('utf-8')
+    msg_bits_arr = []
+    for b in msg_bytes:
+        msg_bits_arr.append(format(b, '08b'))
+    msg_bits = "".join(msg_bits_arr)
+
+    key_len = len(key_str)
+    encrypted_bits = []
+    for i, bit_char in enumerate(msg_bits):
+        k_bit = int(key_str[i % key_len]) if key_len > 0 else 0
+        encrypted_bits.append(str(int(bit_char) ^ k_bit))
+    
+    enc_bits_str = "".join(encrypted_bits)
+    # pad to multiple of 4
+    pad = (4 - len(enc_bits_str) % 4) % 4
+    enc_bits_str = "0"*pad + enc_bits_str
+    
+    msg_hex = hex(int(msg_bits, 2))[2:].upper() if msg_bits else ""
+    enc_hex = hex(int(enc_bits_str, 2))[2:].upper() if enc_bits_str else ""
+    
+    key_used = ""
+    for i in range(len(msg_bits)):
+        key_used += key_str[i % key_len] if key_len > 0 else "0"
+        
+    return msg_hex, msg_bits, key_used, enc_hex, enc_bits_str
+
+@app.route('/api/config', methods=['GET'])
+def get_config_endpoint():
+    return jsonify({"local_ip": get_local_ip()})
+
+@app.route('/api/qkd/quick_generate', methods=['POST'])
+def qkd_quick_generate():
+    global shared_key_str
+    data = request.json or {}
+    length = int(data.get('length', 20))
+    
+    from randomkey import generate_masked_key
+    raw_bits, alice_bases, quantum_data = generate_masked_key(length)
+    
+    noisy_data, _ = _apply_network_noise(quantum_data, noise_config['network_noise_rate'])
+    final_data = _apply_channel_noise(noisy_data, noise_config)
+    
+    bob.set_quantum_data(final_data)
+    measured_bits, bob_bases = bob.measure_qubits()
+    
+    matches, sifted_key = bob.compare_bases(alice_bases)
+    alice_sifted = [raw_bits[i] for i in matches]
+    
+    sample_size = min(len(sifted_key)//3, 8)
+    if sample_size == 0:
+        sample_size = len(sifted_key)
+    alice_sample = alice_sifted[:sample_size]
+    bob_sample = sifted_key[:sample_size]
+    
+    errors = sum(1 for a, b in zip(alice_sample, bob_sample) if a != b)
+    qber = (errors / sample_size * 100) if sample_size > 0 else 0.0
+    
+    final_key = alice_sifted[sample_size:]
+    
+    shared_key_str = "".join(map(str, final_key))
+    if not shared_key_str:
+        shared_key_str = "0"
+        
+    return jsonify({
+        "rawBits": raw_bits,
+        "aliceBases": alice_bases,
+        "bobBases": bob_bases,
+        "measuredBits": measured_bits,
+        "siftedKey": sifted_key,
+        "matches": matches,
+        "finalKey": final_key,
+        "keyLength": len(final_key),
+        "qber": qber,
+        "shared_key": shared_key_str
+    })
+
+@app.route('/api/chat/send', methods=['POST'])
+def chat_send():
+    data = request.json or {}
+    message = data.get('message', '')
+    sender = data.get('sender', 'alice')
+    
+    msg_hex, msg_bits, key_used, enc_hex, enc_bits_str = _xor_encrypt(message, shared_key_str)
+    
+    entry = {
+        "id": str(uuid.uuid4()),
+        "sender": sender,
+        "plaintext": message,
+        "encrypted_hex": enc_hex,
+        "msg_hex": msg_hex,
+        "msg_bits": msg_bits,
+        "key_used": key_used,
+        "encrypted_bits": enc_bits_str,
+        "timestamp": int(time.time())
+    }
+    chat_messages.append(entry)
+    return jsonify({"success": True, "entry": entry})
+
+@app.route('/api/chat/messages', methods=['GET'])
+def chat_messages_get():
+    return jsonify({"messages": chat_messages})
+
+@app.route('/api/eve/intercept', methods=['GET'])
+def eve_intercept():
+    eve_msgs = [{
+        "id": m["id"],
+        "sender": m["sender"],
+        "encrypted_hex": m["encrypted_hex"],
+        "timestamp": m["timestamp"]
+    } for m in chat_messages]
+    return jsonify({"messages": eve_msgs})
+
+@app.route('/api/chat/clear', methods=['POST'])
+def chat_clear():
+    global chat_messages, shared_key_str
+    chat_messages = []
+    shared_key_str = ""
+    return jsonify({"success": True})
 
 
 if __name__ == '__main__':

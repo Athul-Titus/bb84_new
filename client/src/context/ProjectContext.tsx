@@ -61,6 +61,13 @@ interface QChatContextType {
 
     // Last encryption viz
     lastEncryption: ChatMessage | null;
+
+    // Network connection
+    localIP: string;
+    peerIP: string;
+    setPeerIP: (ip: string) => void;
+    connected: boolean;
+    setConnected: (v: boolean) => void;
 }
 
 const QChatContext = createContext<QChatContextType | undefined>(undefined);
@@ -81,11 +88,30 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [lastEncryption, setLastEncryption] = useState<ChatMessage | null>(null);
 
+    // Network connection state
+    const [localIP, setLocalIP] = useState<string>('Fetching...');
+    const [peerIP, setPeerIP] = useState<string>('');
+    const [connected, setConnected] = useState(false);
+
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     const addLog = useCallback((type: LogEntry['type'], message: string) => {
         const time = new Date().toLocaleTimeString();
         setLogs(prev => [...prev.slice(-100), { type, message, time }]);
+    }, []);
+
+    // Fetch local IP on mount
+    useEffect(() => {
+        axios.get('/api/config')
+            .then(res => {
+                if (res.data.local_ip) {
+                    setLocalIP(res.data.local_ip);
+                    addLog('info', `System initialized. Your IP: ${res.data.local_ip}`);
+                }
+            })
+            .catch(() => {
+                setLocalIP('127.0.0.1');
+            });
     }, []);
 
     // Generate quantum key (one-click)
@@ -180,6 +206,11 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         logs,
         addLog,
         lastEncryption,
+        localIP,
+        peerIP,
+        setPeerIP,
+        connected,
+        setConnected,
     };
 
     return <QChatContext.Provider value={value}>{children}</QChatContext.Provider>;
