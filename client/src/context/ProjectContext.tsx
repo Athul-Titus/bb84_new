@@ -114,34 +114,30 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
     }, []);
 
-    // Generate quantum key (one-click)
     const generateKey = useCallback(async (length = 20) => {
         setIsGeneratingKey(true);
         addLog('info', `Initiating BB84 key generation (${length} qubits)...`);
         try {
-            const res = await axios.post('/api/qkd/quick_generate', { length });
+            let res;
+            if (connected && peerIP) {
+                // ── TRUE P2P: Alice generates qubits, Bob measures on his machine ──
+                addLog('info', `P2P mode: Alice generates, Bob (${peerIP}) measures over WiFi...`);
+                res = await axios.post('/api/qkd/p2p_generate', { bob_ip: peerIP, length });
+                addLog('success', `Bob measured remotely. Sifting complete.`);
+            } else {
+                // ── SOLO: both sides run locally (demo/single-machine) ──
+                res = await axios.post('/api/qkd/quick_generate', { length });
+            }
             const data: QKDData = res.data;
             setQkdData(data);
             addLog('success', `Quantum key established: ${data.keyLength} bits | QBER: ${data.qber.toFixed(1)}%`);
-
-            // Sync with peer if connected
-            if (connected && peerIP) {
-                try {
-                    addLog('info', `Syncing key with peer at ${peerIP}...`);
-                    await axios.post(`http://${peerIP}:5000/api/qkd/sync_key`, {
-                        shared_key: res.data.shared_key,
-                    });
-                    addLog('success', 'Key synced with peer');
-                } catch (syncErr: any) {
-                    addLog('warning', `Key sync failed: ${syncErr.message}`);
-                }
-            }
         } catch (err: any) {
             addLog('error', err.response?.data?.error || err.message);
         } finally {
             setIsGeneratingKey(false);
         }
     }, [addLog, connected, peerIP]);
+
 
     // Send a message
     const sendMessage = useCallback(async (text: string, sender: 'alice' | 'bob') => {
