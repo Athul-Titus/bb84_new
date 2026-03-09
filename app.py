@@ -36,15 +36,36 @@ noise_config = {
 # ---------------------------------------------------------------------------
 
 def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Method 1: UDP socket trick (most reliable on open networks)
     try:
-        s.connect(('10.255.255.255', 1))
-        IP = s.getsockname()[0]
-    except Exception:
-        IP = '127.0.0.1'
-    finally:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
         s.close()
-    return IP
+        if ip and not ip.startswith('127.'):
+            return ip
+    except Exception:
+        pass
+
+    # Method 2: getaddrinfo — scan all addresses, pick first real LAN IP
+    try:
+        addrs = socket.getaddrinfo(socket.gethostname(), None)
+        for addr in addrs:
+            ip = addr[4][0]
+            if ':' not in ip and not ip.startswith('127.'):  # skip IPv6 and loopback
+                return ip
+    except Exception:
+        pass
+
+    # Method 3: gethostbyname
+    try:
+        ip = socket.gethostbyname(socket.gethostname())
+        if ip and not ip.startswith('127.'):
+            return ip
+    except Exception:
+        pass
+
+    return '127.0.0.1'
 
 
 def _apply_network_noise(qubit_data, rate):
@@ -682,9 +703,6 @@ def _xor_encrypt(plaintext, key_str):
         
     return msg_hex, msg_bits, key_used, enc_hex, enc_bits_str
 
-@app.route('/api/config', methods=['GET'])
-def get_config_endpoint():
-    return jsonify({"local_ip": get_local_ip()})
 
 @app.route('/api/qkd/quick_generate', methods=['POST'])
 def qkd_quick_generate():

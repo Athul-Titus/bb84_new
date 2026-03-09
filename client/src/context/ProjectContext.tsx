@@ -141,7 +141,7 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } finally {
             setIsGeneratingKey(false);
         }
-    }, [addLog]);
+    }, [addLog, connected, peerIP]);
 
     // Send a message
     const sendMessage = useCallback(async (text: string, sender: 'alice' | 'bob') => {
