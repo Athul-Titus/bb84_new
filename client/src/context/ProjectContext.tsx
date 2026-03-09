@@ -152,6 +152,16 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             setLastEncryption(entry);
             addLog('info', `${sender === 'alice' ? 'Alice' : 'Bob'} sent encrypted message`);
 
+            // Sync with peer if connected
+            if (connected && peerIP) {
+                try {
+                    await axios.post(`http://${peerIP}:5000/api/chat/receive`, entry);
+                    addLog('success', 'Message pushed to peer');
+                } catch (syncErr: any) {
+                    addLog('warning', `Message sync failed: ${syncErr.message}`);
+                }
+            }
+
             // Also fetch Eve's view
             fetchEveMessages();
         } catch (err: any) {
