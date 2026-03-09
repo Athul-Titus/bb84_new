@@ -123,6 +123,19 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             const data: QKDData = res.data;
             setQkdData(data);
             addLog('success', `Quantum key established: ${data.keyLength} bits | QBER: ${data.qber.toFixed(1)}%`);
+
+            // Sync with peer if connected
+            if (connected && peerIP) {
+                try {
+                    addLog('info', `Syncing key with peer at ${peerIP}...`);
+                    await axios.post(`http://${peerIP}:5000/api/qkd/sync_key`, {
+                        shared_key: res.data.shared_key,
+                    });
+                    addLog('success', 'Key synced with peer');
+                } catch (syncErr: any) {
+                    addLog('warning', `Key sync failed: ${syncErr.message}`);
+                }
+            }
         } catch (err: any) {
             addLog('error', err.response?.data?.error || err.message);
         } finally {
