@@ -36,15 +36,36 @@ noise_config = {
 # ---------------------------------------------------------------------------
 
 def get_local_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Method 1: UDP socket trick (most reliable on open networks)
     try:
-        s.connect(('10.255.255.255', 1))
-        IP = s.getsockname()[0]
-    except Exception:
-        IP = '127.0.0.1'
-    finally:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
         s.close()
-    return IP
+        if ip and not ip.startswith('127.'):
+            return ip
+    except Exception:
+        pass
+
+    # Method 2: getaddrinfo — scan all addresses, pick first real LAN IP
+    try:
+        addrs = socket.getaddrinfo(socket.gethostname(), None)
+        for addr in addrs:
+            ip = addr[4][0]
+            if ':' not in ip and not ip.startswith('127.'):  # skip IPv6 and loopback
+                return ip
+    except Exception:
+        pass
+
+    # Method 3: gethostbyname
+    try:
+        ip = socket.gethostbyname(socket.gethostname())
+        if ip and not ip.startswith('127.'):
+            return ip
+    except Exception:
+        pass
+
+    return '127.0.0.1'
 
 
 def _apply_network_noise(qubit_data, rate):
@@ -682,9 +703,6 @@ def _xor_encrypt(plaintext, key_str):
         
     return msg_hex, msg_bits, key_used, enc_hex, enc_bits_str
 
-@app.route('/api/config', methods=['GET'])
-def get_config_endpoint():
-    return jsonify({"local_ip": get_local_ip()})
 
 @app.route('/api/qkd/quick_generate', methods=['POST'])
 def qkd_quick_generate():
@@ -780,7 +798,139 @@ def chat_clear():
     return jsonify({"success": True})
 
 
+@app.route('/api/qkd/p2p_generate', methods=['POST'])
+def qkd_p2p_generate():
+    """
+    True distributed BB84 between two laptops.
+    Alice generates qubits locally, Bob (on another machine) measures them
+    over the network. Sifting and QBER happen on Alice's side (she has both).
+    Final key is then synced to Bob.
+
+    Request body: { "bob_ip": "172.x.x.x", "length": 20 }
+    """
+    import requests as req_lib
+    global shared_key_str
+
+    data     = request.json or {}
+    bob_ip   = data.get('bob_ip')
+    length   = int(data.get('length', 20))
+    alice_ip = get_local_ip()
+
+    if not bob_ip:
+        return jsonify({"error": "bob_ip is required"}), 400
+
+    # ── Step 1: Alice generates qubits locally ───────────────────────────────
+    from randomkey import generate_masked_key
+    raw_bits, alice_bases, _ = generate_masked_key(length)
+    alice.raw_bits = list(raw_bits)
+    alice.bases    = list(alice_bases)
+    alice.encoded_qubits = [True] * length   # mark as prepared
+    alice.shared_key = None
+    print(f"[Alice] Generated {length} qubits. Bases: {alice_bases[:8]}...")
+
+    # ── Step 2: Tell Bob to fetch Alice's qubits and measure them ────────────
+    try:
+        bob_url = f"http://{bob_ip}:5000/api/fetch_from_peer"
+        print(f"[Alice] Instructing Bob ({bob_ip}) to fetch qubits from {alice_ip}...")
+        resp = req_lib.post(bob_url, json={"peer_ip": alice_ip}, timeout=10)
+        if resp.status_code != 200:
+            return jsonify({"error": f"Bob failed to fetch qubits: {resp.text}"}), 500
+        bob_result   = resp.json()
+        bob_bases    = bob_result.get("bobBases", [])
+        measured_bits = bob_result.get("measuredBits", [])
+        noise_stats  = bob_result.get("noiseStats", {})
+        print(f"[Bob via network] Measured {len(measured_bits)} qubits. Bases: {bob_bases[:8]}...")
+    except Exception as e:
+        return jsonify({"error": f"Could not reach Bob at {bob_ip}: {str(e)}"}), 500
+
+    # ── Step 3: Sifting — compare bases, keep matching positions ────────────
+    min_len = min(len(alice_bases), len(bob_bases))
+    alice_bases_t = list(alice_bases)[:min_len]
+    bob_bases_t   = bob_bases[:min_len]
+    raw_bits_t    = list(raw_bits)[:min_len]
+    meas_bits_t   = measured_bits[:min_len]
+
+    sifted_alice = []
+    sifted_bob   = []
+    matches      = []
+    for i in range(min_len):
+        if alice_bases_t[i] == bob_bases_t[i]:
+            sifted_alice.append(int(raw_bits_t[i]))
+            sifted_bob.append(int(meas_bits_t[i]))
+            matches.append(i)
+
+    print(f"[Sifting] {len(matches)} matching positions out of {min_len}")
+
+    # ── Step 4: QBER — sample a portion and count errors ────────────────────
+    sample_size = max(1, min(len(sifted_bob) // 3, 8))
+    alice_sample = sifted_alice[:sample_size]
+    bob_sample   = sifted_bob[:sample_size]
+    errors = sum(1 for a, b in zip(alice_sample, bob_sample) if a != b)
+    qber   = (errors / sample_size * 100) if sample_size > 0 else 0.0
+    print(f"[QBER] {errors}/{sample_size} errors = {qber:.1f}%")
+
+    # ── Step 5: Finalize key (remove sample bits used for QBER) ─────────────
+    final_key = sifted_alice[sample_size:]
+    shared_key_str = "".join(map(str, final_key))
+    if not shared_key_str:
+        shared_key_str = "0"
+    alice.shared_key = final_key
+    print(f"[Alice] Final key established: {len(final_key)} bits")
+
+    # ── Step 6: Push final key to Bob's backend ──────────────────────────────
+    try:
+        sync_url = f"http://{bob_ip}:5000/api/qkd/sync_key"
+        req_lib.post(sync_url, json={"shared_key": shared_key_str}, timeout=5)
+        print(f"[Alice] Synced key to Bob at {sync_url}")
+    except Exception as e:
+        print(f"[Warning] Could not sync key to Bob: {e}")
+
+    return jsonify({
+        "rawBits":      list(raw_bits),
+        "aliceBases":   list(alice_bases),
+        "bobBases":     bob_bases,
+        "measuredBits": measured_bits,
+        "siftedKey":    sifted_bob,
+        "matches":      matches,
+        "finalKey":     final_key,
+        "keyLength":    len(final_key),
+        "qber":         qber,
+        "shared_key":   shared_key_str,
+        "noiseStats":   noise_stats,
+        "aliceIP":      alice_ip,
+        "bobIP":        bob_ip,
+    })
+
+
+@app.route('/api/qkd/sync_key', methods=['POST'])
+def qkd_sync_key():
+    """Alice pushes her shared key to Bob's backend over WiFi."""
+    global shared_key_str
+    data = request.json or {}
+    key = data.get('shared_key', '')
+    if not key:
+        return jsonify({"error": "No key provided"}), 400
+    shared_key_str = key
+    print(f"[Bob] Received synced quantum key: {len(key)} bits | preview: {key[:10]}...")
+    return jsonify({"success": True, "key_length": len(key)})
+
+
+@app.route('/api/chat/receive', methods=['POST'])
+def chat_receive():
+    """Bob receives a message pushed directly from Alice's machine."""
+    entry = request.json or {}
+    if not entry.get('id'):
+        return jsonify({"error": "Invalid message entry — missing id"}), 400
+    # Deduplicate by message id
+    existing_ids = {m['id'] for m in chat_messages}
+    if entry['id'] not in existing_ids:
+        chat_messages.append(entry)
+        print(f"[Bob] Received message from {entry.get('sender')}: {entry.get('encrypted_hex')}")
+    return jsonify({"success": True})
+
+
 if __name__ == '__main__':
+
     print("Starting BB84 Quantum Server with Noise Simulation...")
     print(f"Noise Config: {noise_config}")
     app.run(host='0.0.0.0', port=5000, debug=True)

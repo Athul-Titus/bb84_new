@@ -126,12 +126,20 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             });
     }, []);
 
-    // Generate quantum key (one-click)
     const generateKey = useCallback(async (length = 20) => {
         setIsGeneratingKey(true);
         addLog('info', `Initiating BB84 key generation (${length} qubits)...`);
         try {
-            const res = await axios.post('/api/qkd/quick_generate', { length });
+            let res;
+            if (connected && peerIP) {
+                // ── TRUE P2P: Alice generates qubits, Bob measures on his machine ──
+                addLog('info', `P2P mode: Alice generates, Bob (${peerIP}) measures over WiFi...`);
+                res = await axios.post('/api/qkd/p2p_generate', { bob_ip: peerIP, length });
+                addLog('success', `Bob measured remotely. Sifting complete.`);
+            } else {
+                // ── SOLO: both sides run locally (demo/single-machine) ──
+                res = await axios.post('/api/qkd/quick_generate', { length });
+            }
             const data: QKDData = res.data;
             setQkdData(data);
             addLog('success', `Quantum key established: ${data.keyLength} bits | QBER: ${data.qber.toFixed(1)}%`);
@@ -140,7 +148,8 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         } finally {
             setIsGeneratingKey(false);
         }
-    }, [addLog]);
+    }, [addLog, connected, peerIP]);
+
 
     // Send a message
     const sendMessage = useCallback(async (text: string, sender: 'alice' | 'bob') => {
@@ -150,6 +159,16 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             setMessages(prev => [...prev, entry]);
             setLastEncryption(entry);
             addLog('info', `${sender === 'alice' ? 'Alice' : 'Bob'} sent encrypted message`);
+
+            // Sync with peer if connected
+            if (connected && peerIP) {
+                try {
+                    await axios.post(`http://${peerIP}:5000/api/chat/receive`, entry);
+                    addLog('success', 'Message pushed to peer');
+                } catch (syncErr: any) {
+                    addLog('warning', `Message sync failed: ${syncErr.message}`);
+                }
+            }
 
             // Also fetch Eve's view
             fetchEveMessages();
