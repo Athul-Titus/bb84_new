@@ -3,6 +3,9 @@ import axios from 'axios';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+import type { NoiseConfig } from '../components/NoisePanel';
+import { defaultConfig } from '../components/NoisePanel';
+
 export interface ChatMessage {
     id: string;
     sender: 'alice' | 'bob';
@@ -68,6 +71,10 @@ interface QChatContextType {
     setPeerIP: (ip: string) => void;
     connected: boolean;
     setConnected: (v: boolean) => void;
+
+    // Noise System
+    noiseConfig: NoiseConfig;
+    setNoiseConfig: (config: NoiseConfig) => void;
 }
 
 const QChatContext = createContext<QChatContextType | undefined>(undefined);
@@ -77,6 +84,8 @@ export const useQChat = () => {
     if (!ctx) throw new Error('useQChat must be inside QChatProvider');
     return ctx;
 };
+
+export const useProject = useQChat;
 
 // ─── Provider ────────────────────────────────────────────────────────────────
 
@@ -92,6 +101,9 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [localIP, setLocalIP] = useState<string>('Fetching...');
     const [peerIP, setPeerIP] = useState<string>('');
     const [connected, setConnected] = useState(false);
+
+    // Noise
+    const [noiseConfig, setNoiseConfig] = useState<NoiseConfig>(defaultConfig);
 
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -211,6 +223,8 @@ export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setPeerIP,
         connected,
         setConnected,
+        noiseConfig,
+        setNoiseConfig,
     };
 
     return <QChatContext.Provider value={value}>{children}</QChatContext.Provider>;

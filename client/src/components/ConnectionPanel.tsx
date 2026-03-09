@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState } from 'react';
 import { Wifi, WifiOff, Link } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';

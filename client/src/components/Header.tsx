@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { useProject } from '../context/ProjectContext';

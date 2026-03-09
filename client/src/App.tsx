@@ -5,6 +5,7 @@ import QKDPanel from './components/QKDPanel';
 import EncryptionVisualizer from './components/EncryptionVisualizer';
 import EvePanel from './components/EvePanel';
 import LogTerminal from './components/LogTerminal';
+import NoisePanel from './components/NoisePanel';
 import { useQChat } from './context/ProjectContext';
 
 const App: React.FC = () => {
@@ -29,6 +30,9 @@ const App: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <ChatPanel role="bob" />
           <EvePanel />
+          <div style={{ padding: '0 16px', marginBottom: '16px' }}>
+            <NoisePanel />
+          </div>
         </div>
       </div>
     </div>
