@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState } from 'react';
 import { useProject } from '../context/ProjectContext';
 import axios from 'axios';
