@@ -440,6 +440,92 @@ def finalize_key():
 
 # ─── Network Mode: Peer-to-Peer ──────────────────────────────────────────────
 
+@app.route('/api/network/initiate', methods=['POST'])
+def network_initiate():
+    """
+    Frontend calls this to initiate a connection to a peer.
+    It tells the backend to reach out to the peer's /api/network/connect endpoint,
+    passing our own IP address so the peer knows who we are.
+    """
+    import requests
+    data = request.json or {}
+    target_ip = data.get('target_ip')
+
+    if not target_ip:
+        return jsonify({"error": "Target IP required"}), 400
+
+    local_ip = get_local_ip()
+    target_url = f"http://{target_ip}:5000/api/network/connect"
+
+    try:
+        print(f"[Network] Initiating connection to {target_ip}...")
+        resp = requests.post(target_url, json={"peer_ip": local_ip}, timeout=3)
+        
+        if resp.status_code == 200:
+            global noise_config
+            noise_config['connected_peer_ip'] = target_ip
+            return jsonify({
+                "status": "success", 
+                "message": f"Successfully connected to {target_ip}",
+                "peer_ip": target_ip
+            })
+        else:
+            return jsonify({"error": f"Peer rejected connection: {resp.text}"}), 500
+            
+    except Exception as e:
+        print(f"[Network ERROR] Failed to connect to {target_ip}: {e}")
+        return jsonify({"error": f"Could not reach {target_ip}: {str(e)}"}), 500
+
+@app.route('/api/network/connect', methods=['POST'])
+def network_connect():
+    """
+    Called by the peer to initiate a connection.
+    Bob receives this from Alice, stores her IP, and responds with success.
+    """
+    data = request.json or {}
+    peer_ip = data.get('peer_ip')
+
+    if not peer_ip:
+        return jsonify({"error": "Peer IP required"}), 400
+
+    global noise_config
+    noise_config['connected_peer_ip'] = peer_ip
+    print(f"[Network] Connection established with peer: {peer_ip}")
+    
+    return jsonify({"status": "success", "message": f"Connected to {peer_ip}"})
+
+@app.route('/api/network/status', methods=['GET'])
+def network_status():
+    """
+    Frontend polls this to see if a peer has connected to us.
+    """
+    peer_ip = noise_config.get('connected_peer_ip', '')
+    return jsonify({
+        "connected": bool(peer_ip),
+        "peer_ip": peer_ip
+    })
+
+@app.route('/api/network/disconnect', methods=['POST'])
+def network_disconnect():
+    """
+    Frontend calls this to sever the connection, and optionally notifies the peer.
+    """
+    global noise_config
+    peer_ip = noise_config.get('connected_peer_ip', '')
+    noise_config['connected_peer_ip'] = ''
+    
+    # Notify peer if possible
+    data = request.json or {}
+    notify = data.get('notify_peer', True)
+    if notify and peer_ip:
+        try:
+            import requests
+            requests.post(f"http://{peer_ip}:5000/api/network/disconnect", json={"notify_peer": False}, timeout=2)
+        except Exception:
+            pass
+
+    return jsonify({"status": "success", "message": "Disconnected"})
+
 @app.route('/api/fetch_from_peer', methods=['POST'])
 def fetch_from_peer():
     """Bob calls this to tell his backend to go fetch data from Alice's IP."""
@@ -563,8 +649,8 @@ def verify_peer_sample():
 
 # ─── Messaging (Encrypt/Decrypt) ─────────────────────────────────────────────
 
-@app.route('/api/encrypt_message', methods=['POST'])
-def encrypt_message():
+@app.route('/api/old_encrypt_message', methods=['POST'])
+def old_encrypt_message():
     data    = request.json
     message = data.get('message', '')
     key_str = data.get('key', '')
@@ -598,16 +684,16 @@ def encrypt_message():
     return jsonify({"encrypted_hex": encrypted_hex})
 
 
-@app.route('/api/get_message', methods=['GET'])
-def get_message():
+@app.route('/api/old_get_message', methods=['GET'])
+def old_get_message():
     """Alice exposes her outbox via this endpoint."""
     if not hasattr(alice, 'outbox') or len(alice.outbox) == 0:
         return jsonify({"messages": []})
     return jsonify({"messages": alice.outbox})
 
 
-@app.route('/api/fetch_message_from_peer', methods=['POST'])
-def fetch_message_from_peer():
+@app.route('/api/old_fetch_message_from_peer', methods=['POST'])
+def old_fetch_message_from_peer():
     """Bob asks his backend to poll Alice's backend for messages."""
     import requests
     data    = request.json
@@ -633,8 +719,8 @@ def fetch_message_from_peer():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route('/api/decrypt_message', methods=['POST'])
-def decrypt_message():
+@app.route('/api/old_decrypt_message', methods=['POST'])
+def old_decrypt_message():
     data          = request.json
     encrypted_hex = data.get('encrypted_hex', '')
     key_str       = data.get('key', '')
@@ -753,6 +839,64 @@ def qkd_quick_generate():
         "qber": qber,
         "shared_key": shared_key_str
     })
+
+# ─── P2P Secure Messaging Endpoints ──────────────────────────────────────────
+
+@app.route('/api/encrypt_message', methods=['POST'])
+def encrypt_message():
+    data = request.json or {}
+    message = data.get('message', '')
+    key = data.get('key', '')
+    
+    if not message or not key:
+        return jsonify({"error": "Message and key required"}), 400
+        
+    msg_hex, msg_bits, key_used, enc_hex, enc_bits_str = _xor_encrypt(message, key)
+    
+    # Store locally for peer to fetch
+    global chat_messages
+    chat_messages.append(enc_hex) 
+    
+    return jsonify({
+        "encrypted_hex": enc_hex, 
+        "msg_bits": msg_bits, 
+        "encrypted_bits": enc_bits_str
+    })
+
+@app.route('/api/decrypt_message', methods=['POST'])
+def decrypt_message():
+    data = request.json or {}
+    enc_hex = data.get('encrypted_hex', '')
+    key = data.get('key', '')
+    
+    if not enc_hex or not key:
+        return jsonify({"error": "Encrypted hex and key required"}), 400
+        
+    plaintext = _xor_decrypt(enc_hex, key)
+    return jsonify({"decrypted_message": plaintext})
+
+@app.route('/api/get_message', methods=['GET'])
+def get_message():
+    # Returns Alice's stored encrypted messages
+    return jsonify({"messages": chat_messages})
+
+@app.route('/api/fetch_message_from_peer', methods=['POST'])
+def fetch_message_from_peer():
+    import requests
+    data = request.json or {}
+    peer_ip = data.get('peer_ip')
+    
+    if not peer_ip:
+        return jsonify({"error": "peer_ip required"}), 400
+        
+    try:
+        resp = requests.get(f"http://{peer_ip}:5000/api/get_message", timeout=3)
+        if resp.status_code == 200:
+            return jsonify(resp.json())
+        else:
+            return jsonify({"error": "Failed to fetch from peer"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/chat/send', methods=['POST'])
 def chat_send():

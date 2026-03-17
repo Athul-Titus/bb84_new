@@ -1,236 +1,144 @@
-import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-export interface ChatMessage {
-    id: string;
-    sender: 'alice' | 'bob';
-    plaintext: string;
-    encrypted_hex: string;
-    msg_hex: string;
-    msg_bits: string;
-    key_used: string;
-    encrypted_bits: string;
-    timestamp: number;
-}
-
-export interface EveMessage {
-    id: string;
-    sender: string;
-    encrypted_hex: string;
-    timestamp: number;
-}
-
-export interface QKDData {
-    rawBits: number[];
-    aliceBases: number[];
-    bobBases: number[];
-    measuredBits: number[];
-    siftedKey: number[];
-    matches: number[];
-    finalKey: number[];
-    keyLength: number;
-    qber: number;
-}
-
-export interface LogEntry {
+interface LogEntry {
     type: 'info' | 'success' | 'warning' | 'error';
     message: string;
     time: string;
 }
 
-interface QChatContextType {
-    // QKD state
-    qkdData: QKDData | null;
-    keyEstablished: boolean;
-    isGeneratingKey: boolean;
-    generateKey: (length?: number) => Promise<void>;
-
-    // Chat
-    messages: ChatMessage[];
-    eveMessages: EveMessage[];
-    sendMessage: (text: string, sender: 'alice' | 'bob') => Promise<void>;
-    fetchMessages: () => Promise<void>;
-    fetchEveMessages: () => Promise<void>;
-    clearChat: () => Promise<void>;
-
-    // Logs
+interface ProjectContextType {
+    role: 'alice' | 'bob';
+    setRole: (role: 'alice' | 'bob') => void;
     logs: LogEntry[];
     addLog: (type: LogEntry['type'], msg: string) => void;
 
-    // Last encryption viz
-    lastEncryption: ChatMessage | null;
-
-    // Network connection
+    // Connection
     localIP: string;
     peerIP: string;
     setPeerIP: (ip: string) => void;
     connected: boolean;
-    setConnected: (v: boolean) => void;
+    setConnected: (status: boolean) => void;
+
+    // Quantum State
+    aliceBits: number[];
+    aliceBases: number[];
+    setAliceState: (bits: number[], bases: number[]) => void;
+
+    bobBases: number[];
+    bobBits: number[];
+    setBobState: (bases: number[], bits: number[]) => void;
+
+    sharedKey: number[];
+    setSharedKey: (key: number[]) => void;
+
+    // Network Config
+    noiseConfig: any;
+    setNoiseConfig: (config: any) => void;
+
+    resetState: () => void;
 }
 
-const QChatContext = createContext<QChatContextType | undefined>(undefined);
+const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
-export const useQChat = () => {
-    const ctx = useContext(QChatContext);
-    if (!ctx) throw new Error('useQChat must be inside QChatProvider');
-    return ctx;
+export const useProject = () => {
+    const context = useContext(ProjectContext);
+    if (!context) throw new Error('useProject must be used within a ProjectProvider');
+    return context;
 };
 
-// ─── Provider ────────────────────────────────────────────────────────────────
-
-export const QChatProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [qkdData, setQkdData] = useState<QKDData | null>(null);
-    const [isGeneratingKey, setIsGeneratingKey] = useState(false);
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
-    const [eveMessages, setEveMessages] = useState<EveMessage[]>([]);
+export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [role, setRole] = useState<'alice' | 'bob'>('alice');
     const [logs, setLogs] = useState<LogEntry[]>([]);
-    const [lastEncryption, setLastEncryption] = useState<ChatMessage | null>(null);
-
-    // Network connection state
     const [localIP, setLocalIP] = useState<string>('Fetching...');
     const [peerIP, setPeerIP] = useState<string>('');
-    const [connected, setConnected] = useState(false);
+    const [connected, setConnected] = useState<boolean>(false);
 
-    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const [aliceBits, setAliceBits] = useState<number[]>([]);
+    const [aliceBases, setAliceBases] = useState<number[]>([]);
 
-    const addLog = useCallback((type: LogEntry['type'], message: string) => {
-        const time = new Date().toLocaleTimeString();
-        setLogs(prev => [...prev.slice(-100), { type, message, time }]);
-    }, []);
+    const [bobBases, setBobBases] = useState<number[]>([]);
+    const [bobBits, setBobBits] = useState<number[]>([]);
 
-    // Fetch local IP on mount
+    const [sharedKey, setSharedKey] = useState<number[]>([]);
+    const [noiseConfig, setNoiseConfig] = useState<any>({ eve_active: false });
+
+    const pollRef = useRef<any>(null);
+
     useEffect(() => {
+        // Initial Config Fetch
         axios.get('/api/config')
             .then(res => {
                 if (res.data.local_ip) {
                     setLocalIP(res.data.local_ip);
-                    addLog('info', `System initialized. Your IP: ${res.data.local_ip}`);
+                    addLog('info', `System initialized. Local IP: ${res.data.local_ip}`);
                 }
             })
-            .catch(() => {
-                setLocalIP('127.0.0.1');
+            .catch(err => {
+                console.error(err);
+                addLog('error', 'Failed to fetch local configuration.');
             });
+
+        axios.get('/api/get_noise_config').then(res => {
+            setNoiseConfig(res.data);
+        }).catch(err => console.error(err));
     }, []);
 
-    const generateKey = useCallback(async (length = 20) => {
-        setIsGeneratingKey(true);
-        addLog('info', `Initiating BB84 key generation (${length} qubits)...`);
-        try {
-            let res;
-            if (connected && peerIP) {
-                // ── TRUE P2P: Alice generates qubits, Bob measures on his machine ──
-                addLog('info', `P2P mode: Alice generates, Bob (${peerIP}) measures over WiFi...`);
-                res = await axios.post('/api/qkd/p2p_generate', { bob_ip: peerIP, length });
-                addLog('success', `Bob measured remotely. Sifting complete.`);
-            } else {
-                // ── SOLO: both sides run locally (demo/single-machine) ──
-                res = await axios.post('/api/qkd/quick_generate', { length });
-            }
-            const data: QKDData = res.data;
-            setQkdData(data);
-            addLog('success', `Quantum key established: ${data.keyLength} bits | QBER: ${data.qber.toFixed(1)}%`);
-        } catch (err: any) {
-            addLog('error', err.response?.data?.error || err.message);
-        } finally {
-            setIsGeneratingKey(false);
-        }
-    }, [addLog, connected, peerIP]);
-
-
-    // Send a message
-    const sendMessage = useCallback(async (text: string, sender: 'alice' | 'bob') => {
-        try {
-            const res = await axios.post('/api/chat/send', { message: text, sender });
-            const entry: ChatMessage = res.data.entry;
-            setMessages(prev => [...prev, entry]);
-            setLastEncryption(entry);
-            addLog('info', `${sender === 'alice' ? 'Alice' : 'Bob'} sent encrypted message`);
-
-            // Sync with peer if connected
-            if (connected && peerIP) {
-                try {
-                    await axios.post(`http://${peerIP}:5000/api/chat/receive`, entry);
-                    addLog('success', 'Message pushed to peer');
-                } catch (syncErr: any) {
-                    addLog('warning', `Message sync failed: ${syncErr.message}`);
-                }
-            }
-
-            // Also fetch Eve's view
-            fetchEveMessages();
-        } catch (err: any) {
-            addLog('error', err.response?.data?.error || err.message);
-        }
-    }, [addLog]);
-
-    // Fetch all messages
-    const fetchMessages = useCallback(async () => {
-        try {
-            const res = await axios.get('/api/chat/messages');
-            setMessages(res.data.messages || []);
-        } catch (err: any) {
-            console.error(err);
-        }
-    }, []);
-
-    // Fetch Eve's intercepted view
-    const fetchEveMessages = useCallback(async () => {
-        try {
-            const res = await axios.get('/api/eve/intercept');
-            setEveMessages(res.data.messages || []);
-        } catch (err: any) {
-            console.error(err);
-        }
-    }, []);
-
-    // Clear chat
-    const clearChat = useCallback(async () => {
-        try {
-            await axios.post('/api/chat/clear');
-            setMessages([]);
-            setEveMessages([]);
-            setLastEncryption(null);
-            addLog('info', 'Chat history cleared');
-        } catch (err: any) {
-            addLog('error', 'Failed to clear chat');
-        }
-    }, [addLog]);
-
-    // Poll for new messages every 2s
-    useEffect(() => {
-        pollRef.current = setInterval(() => {
-            fetchMessages();
-            fetchEveMessages();
-        }, 2000);
-        return () => {
-            if (pollRef.current) clearInterval(pollRef.current);
-        };
-    }, [fetchMessages, fetchEveMessages]);
-
-    const keyEstablished = !!(qkdData && qkdData.keyLength > 0);
-
-    const value: QChatContextType = {
-        qkdData,
-        keyEstablished,
-        isGeneratingKey,
-        generateKey,
-        messages,
-        eveMessages,
-        sendMessage,
-        fetchMessages,
-        fetchEveMessages,
-        clearChat,
-        logs,
-        addLog,
-        lastEncryption,
-        localIP,
-        peerIP,
-        setPeerIP,
-        connected,
-        setConnected,
+    const addLog = (type: LogEntry['type'], message: string) => {
+        const time = new Date().toLocaleTimeString();
+        setLogs(prev => [...prev.slice(-99), { type, message, time }]);
     };
 
-    return <QChatContext.Provider value={value}>{children}</QChatContext.Provider>;
+    // Poll for network status to see if a peer connected to us
+    useEffect(() => {
+        pollRef.current = setInterval(async () => {
+            try {
+                const res = await axios.get('/api/network/status');
+                if (res.data.connected && res.data.peer_ip !== peerIP) {
+                    setPeerIP(res.data.peer_ip);
+                    setConnected(true);
+                    addLog('success', `Peer connected from ${res.data.peer_ip}`);
+                }
+            } catch (e) {
+                // ignore
+            }
+        }, 3000);
+        return () => clearInterval(pollRef.current);
+    }, [peerIP]);
+
+    const setAliceState = (bits: number[], bases: number[]) => {
+        setAliceBits(bits);
+        setAliceBases(bases);
+    };
+
+    const setBobState = (bases: number[], bits: number[]) => {
+        setBobBases(bases);
+        setBobBits(bits);
+    };
+
+    const resetState = () => {
+        setAliceBits([]);
+        setAliceBases([]);
+        setBobBases([]);
+        setBobBits([]);
+        setSharedKey([]);
+        addLog('info', 'State reset.');
+    };
+
+    const value: ProjectContextType = {
+        role, setRole,
+        logs, addLog,
+        localIP, peerIP, setPeerIP, connected, setConnected,
+        aliceBits, aliceBases, setAliceState,
+        bobBases, bobBits, setBobState,
+        sharedKey, setSharedKey,
+        noiseConfig, setNoiseConfig,
+        resetState
+    };
+
+    return (
+        <ProjectContext.Provider value={value}>
+            {children}
+        </ProjectContext.Provider>
+    );
 };

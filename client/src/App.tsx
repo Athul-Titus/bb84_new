@@ -1,34 +1,51 @@
 import React from 'react';
-import QChatHeader from './components/QChatHeader';
-import ChatPanel from './components/ChatPanel';
-import QKDPanel from './components/QKDPanel';
-import EncryptionVisualizer from './components/EncryptionVisualizer';
-import EvePanel from './components/EvePanel';
+import ConnectionPanel from './components/ConnectionPanel';
+import AlicePanel from './components/AlicePanel';
+import BobPanel from './components/BobPanel';
 import LogTerminal from './components/LogTerminal';
-import { useQChat } from './context/ProjectContext';
+import Messaging from './components/Messaging';
+import { useProject } from './context/ProjectContext';
+import { User, Download } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { lastEncryption } = useQChat();
+  const { role, setRole, connected } = useProject();
 
   return (
-    <div className="qchat-app">
-      <QChatHeader />
+    <div className="app-container">
+      <header className="header">
+        <h1>⚛️ BB84 Protocol - True P2P Mode</h1>
+        <div className="role-selector">
+          <button
+            className={`btn ${role === 'alice' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setRole('alice')}
+          >
+            <User size={16} /> Alice (Sender)
+          </button>
+          <button
+            className={`btn ${role === 'bob' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setRole('bob')}
+          >
+            <Download size={16} /> Bob (Receiver)
+          </button>
+        </div>
+      </header>
 
-      <div className="qchat-panels">
-        {/* ── Alice Panel ── */}
-        <ChatPanel role="alice" />
+      <div className="main-grid">
+        <div className="left-panel">
+          <ConnectionPanel />
 
-        {/* ── Center: Quantum Channel ── */}
-        <div className="center-panel">
-          <QKDPanel />
-          <EncryptionVisualizer entry={lastEncryption} />
-          <LogTerminal />
+          {connected && (
+            <>
+              {role === 'alice' ? <AlicePanel /> : <BobPanel />}
+            </>
+          )}
+
+          {connected && <Messaging />}
+
         </div>
 
-        {/* ── Bob + Eve Panel ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <ChatPanel role="bob" />
-          <EvePanel />
+        <div className="right-panel">
+          <LogTerminal />
         </div>
       </div>
     </div>

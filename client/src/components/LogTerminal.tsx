@@ -1,8 +1,8 @@
 import React, { useRef, useEffect } from 'react';
-import { useQChat } from '../context/ProjectContext';
+import { useProject } from '../context/ProjectContext';
 
 const LogTerminal: React.FC = () => {
-    const { logs } = useQChat();
+    const { logs } = useProject();
     const bottomRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
