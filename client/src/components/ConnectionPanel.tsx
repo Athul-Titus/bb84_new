@@ -5,9 +5,18 @@ import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
 
 const ConnectionPanel: React.FC = () => {
-    const { localIP, peerIP, setPeerIP, connected, setConnected, addLog } = useProject();
+    const { localIP, peerIP, setPeerIP, connected, setConnected, addLog, noiseConfig, setNoiseConfig } = useProject();
     const [ipInput, setIpInput] = useState(peerIP);
     const [copied, setCopied] = useState(false);
+
+    // Save settings to backend automatically upon slider changes
+    const updateNoiseConfig = async (newConfig: any) => {
+        const updated = { ...noiseConfig, ...newConfig };
+        setNoiseConfig(updated);
+        try {
+            await axios.post('/api/set_noise_config', updated);
+        } catch (e) { }
+    };
 
     const handleCopy = () => {
         if (localIP && localIP !== 'Fetching...') {
@@ -111,7 +120,73 @@ const ConnectionPanel: React.FC = () => {
                     </button>
                 </div>
             </div>
-            
+            {/* Quantum Simulator Configuration (per Fiorini et al 2024) */}
+            <div style={{
+                marginTop: '16px',
+                padding: '24px',
+                background: 'var(--bg-card)',
+                border: '1px solid var(--border-light)',
+                borderRadius: 'var(--radius-md)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '20px'
+            }}>
+                <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', borderBottom: '1px solid var(--border-light)', paddingBottom: '12px', marginBottom: '4px' }}>
+                    Quantum Hardware & Interception Configuration
+                </div>
+                
+                {/* Hardware Toggle */}
+                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
+                    <input 
+                        type="checkbox" 
+                        checked={noiseConfig.use_hardware_noise || false}
+                        onChange={(e) => updateNoiseConfig({ use_hardware_noise: e.target.checked })}
+                        style={{ width: '18px', height: '18px', accentColor: 'var(--accent-primary)' }}
+                    />
+                    Enable Real Hardware Noise Modelling (IBM GenericBackendV2)
+                </label>
+                
+                {noiseConfig.use_hardware_noise && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>
+                            Baseline Noise Subtraction (QBER_SN %)
+                        </label>
+                        <input
+                            type="number"
+                            step="0.1"
+                            value={noiseConfig.qber_sn || 1.85}
+                            onChange={(e) => updateNoiseConfig({ qber_sn: parseFloat(e.target.value) })}
+                            style={{ width: '120px', padding: '8px 12px', border: '1px solid var(--border-light)', borderRadius: '6px' }}
+                        />
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Typical QBER_SN for 1024 qubits is ~1.85%</span>
+                    </div>
+                )}
+
+                {/* Eve Interception Slider */}
+                <div className="input-group" style={{ marginBottom: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <label>Eve Interception Density ($p$)</label>
+                        <span style={{ fontWeight: 600, color: 'var(--accent-primary)' }}>
+                            {(noiseConfig.interception_density || 0.0).toFixed(2)}
+                        </span>
+                    </div>
+                    <input 
+                        type="range" 
+                        min="0" 
+                        max="1" 
+                        step="0.05"
+                        value={noiseConfig.interception_density || 0.0}
+                        onChange={(e) => updateNoiseConfig({ interception_density: parseFloat(e.target.value) })}
+                        style={{ width: '100%', accentColor: 'var(--accent-primary)' }}
+                    />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                        <span>0.0 (Secure Channel)</span>
+                        <span>0.5 (Partial Tap)</span>
+                        <span>1.0 (Full Intercept)</span>
+                    </div>
+                </div>
+            </div>
+
             {/* Attack Mode panel (Guitouni et al. Section 4.1) */}
             <AttackModeSelector />
         </div>

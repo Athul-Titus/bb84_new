@@ -37,12 +37,21 @@ class Bob(Node):
         # ---------------------------------------------------------------
         # Build the simulator — noisy or ideal based on noise_config
         # ---------------------------------------------------------------
-        if noise_config and noise_config.get('channel_noise_rate', 0) > 0:
-            rate = float(noise_config['channel_noise_rate'])
+        use_hardware_noise = noise_config and noise_config.get('use_hardware_noise', False)
+        if use_hardware_noise or (noise_config and noise_config.get('channel_noise_rate', 0) > 0):
+            rate = float(noise_config.get('channel_noise_rate', 0.0))
             t1   = float(noise_config.get('t1_us', 50.0))
             t2   = float(noise_config.get('t2_us', 30.0))
-            simulator = build_noisy_simulator(depolar_rate=rate, t1_us=t1, t2_us=t2)
-            self.log(f"[Channel Noise] Depolarizing rate={rate:.3f}, T1={t1}µs, T2={t2}µs")
+            simulator = build_noisy_simulator(
+                use_hardware_noise=use_hardware_noise,
+                depolar_rate=rate,
+                t1_us=t1,
+                t2_us=t2
+            )
+            if use_hardware_noise:
+                self.log(f"[Hardware Noise] Using GenericBackendV2 (65 qubits)")
+            else:
+                self.log(f"[Channel Noise] Custom Depolarizing rate={rate:.3f}, T1={t1}µs, T2={t2}µs")
         else:
             simulator = self.simulator  # ideal
 
@@ -65,8 +74,11 @@ class Bob(Node):
             # Add measurement
             measure_circuit.measure_all()
 
+            # Transpile circuit to native basis gates supported by the simulator
+            compiled_circuit = transpile(measure_circuit, simulator)
+
             # Run simulation (single shot — as in physical photon detection)
-            result = simulator.run(measure_circuit, shots=1, memory=True).result()
+            result = simulator.run(compiled_circuit, shots=1, memory=True).result()
             measured_bit_str = result.get_memory()[0]
 
             # Parse first valid '0' or '1' character from result string

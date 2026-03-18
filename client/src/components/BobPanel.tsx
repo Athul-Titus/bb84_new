@@ -21,6 +21,7 @@ const BobPanel: React.FC = () => {
     const [step, setStep] = useState(0); // 0: Ready, 1: Received, 2: Sifted, 3: Verified
     const [qber, setQber] = useState<number | null>(null);
     const [pHat, setPHat] = useState<number | null>(null);
+    const [qberSn, setQberSn] = useState<number | null>(null);
     const [efficiency, setEfficiency] = useState<number>(0);
     const [noiseStats, setNoiseStats] = useState<{ dropped: number; flips: number; original_count: number } | null>(null);
 
@@ -55,10 +56,12 @@ const BobPanel: React.FC = () => {
                         addLog('warning', `[Packet Loss] ${res.data.noiseStats.dropped} qubits dropped (photon loss).`);
                     if (res.data.noiseStats?.flips > 0)
                         addLog('warning', `[Network Noise] ${res.data.noiseStats.flips} qubit descriptions corrupted in transit.`);
-                    if (noiseConfig.eve_active)
-                        addLog('warning', '[Eve] Intercept-resend active — expect elevated QBER.');
-                    if (noiseConfig.channel_noise_rate > 0)
-                        addLog('info', `[Channel Noise] Qiskit depolarizing rate: ${(noiseConfig.channel_noise_rate * 100).toFixed(0)}%.`);
+                    if (noiseConfig.interception_density > 0)
+                        addLog('warning', `[Eve] Intercept-resend active (p=${noiseConfig.interception_density.toFixed(2)}) — expect elevated QBER.`);
+                    if (noiseConfig.use_hardware_noise)
+                        addLog('info', `[Hardware Noise] IBM GenericBackendV2 engaged.`);
+                    else if (noiseConfig.channel_noise_rate > 0)
+                        addLog('info', `[Channel Noise] Custom depolarizing rate: ${(noiseConfig.channel_noise_rate * 100).toFixed(0)}%.`);
                 }
             }
         } catch (err: any) {
@@ -119,24 +122,25 @@ const BobPanel: React.FC = () => {
                 res = { data: { ...compareRes.data, remainingKey } };
             }
 
-            const { errorCount, qber: newQber, p_hat: newPHat, remainingKey, keyMetrics: newMetrics } = res.data;
+            const { errorCount, qber: newQber, p_hat: newPHat, p_hat, qber_sn, remainingKey, keyMetrics: newMetrics } = res.data;
             setQber(newQber);
             if (newPHat !== undefined) setPHat(newPHat);
+            else if (p_hat !== undefined) setPHat(p_hat);
+            if (qber_sn !== undefined) setQberSn(qber_sn);
 
             if (newMetrics) {
                 setKeyMetrics(newMetrics);
                 addLog('info', `[Security] Entropy: ${newMetrics.entropy.toFixed(3)} bits | Correlation: ${newMetrics.correlation.toFixed(3)} | Efficiency: ${newMetrics.efficiency.toFixed(1)}%`);
             }
 
-            if (errorCount > 0) {
-                const cause = noiseConfig.eve_active ? '⚠️ Eve detected!' : 'Channel interference';
-                addLog('error', `QBER: ${newQber.toFixed(2)}% (${errorCount} errors) — ${cause}`);
-                if (newQber > 20) {
-                    addLog('error', 'QBER > 20% — Aborting key exchange for security.');
+            if (res.data.verified) {
+                addLog('success', `Verification Success! QBER: ${newQber.toFixed(2)}% | Est. p_hat: ${p_hat?.toFixed(3)}`);
+            } else {
+                addLog('error', `QBER: ${newQber.toFixed(2)}% (${errorCount} errors) — Est. p_hat: ${p_hat?.toFixed(3)} | Verification Failed.`);
+                if (newQber > 20 || (p_hat && p_hat > 0.1)) {
+                    addLog('error', 'Critical security threshold breached. Aborting key exchange.');
                     return;
                 }
-            } else {
-                addLog('success', 'QBER: 0% — Secure channel confirmed.');
             }
 
             setSharedKey(remainingKey);
@@ -206,6 +210,7 @@ const BobPanel: React.FC = () => {
                             setQber(null);
                             setPHat(null);
                             setKeyMetrics(null);
+                            setQberSn(null);
                             setSiftedKey([]);
                             setMatches([]);
                             setNoiseStats(null);
@@ -246,9 +251,9 @@ const BobPanel: React.FC = () => {
                             📡 Corrupted: <strong>{noiseStats.flips}</strong>
                         </span>
                     )}
-                    {noiseConfig.eve_active && (
+                    {noiseConfig.interception_density > 0 && (
                         <span style={{ color: 'var(--red-error)' }}>
-                            🕵️ Eve Active
+                            🕵️ Eve (Tap Density: {noiseConfig.interception_density})
                         </span>
                     )}
                 </motion.div>
@@ -294,13 +299,18 @@ const BobPanel: React.FC = () => {
                     <div className="display-font" style={{ fontSize: 28, fontWeight: 600, color: qberColor(qber), minWidth: 80 }}>
                         {qber.toFixed(1)}%
                     </div>
-                    <div>
+                    <div style={{ flex: 1 }}>
                         <div style={{ color: qberColor(qber), fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{qberLabel(qber)}</div>
-                        <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                            Quantum Bit Error Rate (QBER)
-                            {qber > 0 && noiseConfig.eve_active && ' — Intercept & Resend Attack!'}
-                            {qber > 0 && !noiseConfig.eve_active && noiseConfig.channel_noise_rate > 0 && ' — Channel Depolarizing Noise'}
-                            {qber > 0 && !noiseConfig.eve_active && noiseConfig.network_noise_rate > 0 && ' — Network Simulation Noise'}
+                        <div style={{ color: 'var(--text-muted)', fontSize: 13, display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                            <span><strong>QBER</strong>: {qber.toFixed(1)}%</span>
+                            {pHat !== null && (
+                                <span style={{ color: pHat > 0.05 ? 'var(--red-error)' : 'inherit' }}>
+                                    <strong>Est. Intrusion ($\hat{{p}}$)</strong>: {pHat.toFixed(3)}
+                                </span>
+                            )}
+                            {qberSn !== null && noiseConfig.use_hardware_noise && (
+                                <span><strong>Baseline Noise ($QBER_{{SN}}$)</strong>: {qberSn}%</span>
+                            )}
                         </div>
                     </div>
                 </motion.div>

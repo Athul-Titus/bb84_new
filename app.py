@@ -23,7 +23,9 @@ bob = Bob()
 # Global noise configuration — updated by /api/set_noise_config
 # ---------------------------------------------------------------------------
 noise_config = {
-    "eve_active":          False,   # Intercept-resend attack by Eve
+    "interception_density": 0.0,    # 'p' - Probability [0,1] Eve intercepts each qubit
+    "use_hardware_noise":  False,   # Toggles GenericBackendV2 (simulates hardware)
+    "qber_sn":             0.0,     # Baseline QBER of the hardware noise (used for p_hat estimation)
     "network_noise_rate":  0.0,     # Probability of bit-flip in the JSON stream (0–1)
     "channel_noise_rate":  0.0,     # Depolarizing error rate in AerSimulator (0–1)
     "t1_us":               50.0,    # Thermal T1 in microseconds
@@ -110,25 +112,28 @@ def _apply_packet_loss(qubit_data, rate):
 
 def _apply_eve(qubit_data):
     """
-    Eavesdropping (Eve): Intercept-Resend Attack.
-    Eve randomly measures each qubit in a random basis (0=Rect, 1=Diag),
-    then re-encodes in her measured basis — disturbing the state probabilistically.
-    This produces QBER ≈ 25% on the sifted key.
+    Eavesdropping (Eve): Partial Intercept-and-Resend Attack.
+    Based on 'interception_density' (p). Eve randomly intercepts each qubit with probability p.
+    If intercepted, she measures in a random basis and re-encodes it.
     """
+    p = float(noise_config.get("interception_density", 0.0))
+    if p <= 0:
+        return qubit_data
+
     tapped = []
     intercepts = 0
     for q in qubit_data:
         entry = dict(q)
-        eve_basis = random.randint(0, 1)
-
-        if eve_basis != q['basis']:
-            # Eve measured in wrong basis — 50% chance of getting the wrong bit
-            # She re-encodes whatever she got, corrupting Alice's original state
-            entry['bit'] = random.randint(0, 1)
+        # Does Eve intercept this specific qubit?
+        if random.random() < p:
+            eve_basis = random.randint(0, 1)
+            # If she guesses the wrong basis, she fundamentally disturbs the qubit bit
+            if eve_basis != q['basis']:
+                entry['bit'] = random.randint(0, 1)
             intercepts += 1
-
         tapped.append(entry)
-    print(f"[Eve] Intercepted and re-encoded. Basis mismatches: {intercepts}/{len(qubit_data)}")
+        
+    print(f"[Eve] Partial Intercept-Resend (p={p:.2f}). Intercepted: {intercepts}/{len(qubit_data)}")
     return tapped
 
 
@@ -253,7 +258,9 @@ def set_noise_config():
     """
     Frontend sends the current noise settings here.
     Accepted keys (all optional — only provided keys are updated):
-        eve_active           : bool
+        interception_density : float 0-1 (p)
+        use_hardware_noise   : bool
+        qber_sn              : float 0-100
         network_noise_rate   : float 0-1
         channel_noise_rate   : float 0-1
         t1_us                : float (microseconds)
@@ -353,8 +360,8 @@ def get_quantum_data():
 
     original_count = len(qubit_data)
 
-    # 1. Eve intercepts (if active)
-    if noise_config.get("eve_active", False):
+    # 1. Eve intercepts (Partial Intercept-and-Resend p-density)
+    if noise_config.get("interception_density", 0.0) > 0:
         qubit_data = _apply_eve(qubit_data)
 
     # 2. Packet loss
@@ -368,7 +375,7 @@ def get_quantum_data():
         "original_count": original_count,
         "dropped":        dropped,
         "flips":          flips,
-        "eve_active":     noise_config.get("eve_active", False),
+        "eve_active":     noise_config.get("interception_density", 0.0) > 0,
     })
 
 
@@ -393,7 +400,7 @@ def bob_measure():
     original_count = len(qubit_data)
 
     # Apply noise pipeline
-    if noise_config.get("eve_active", False):
+    if noise_config.get("interception_density", 0.0) > 0:
         qubit_data = _apply_eve(qubit_data)
 
     qubit_data, dropped = _apply_packet_loss(qubit_data, noise_config.get("packet_loss_rate", 0))
@@ -513,18 +520,29 @@ def compare_sample():
             error_count += 1
 
     qber = (error_count / total) * 100 if total > 0 else 0
-    qber_sn = noise_config.get("qber_sn", 0.0)
-    p_hat = 4 * (qber - qber_sn) / 100 if qber >= qber_sn else 0.0
+    # --- Advanced Intrusion Detection Math (Future Internet 2024 paper) ---
+    # Equation: p_hat = 4 * (QBER_hat - QBER_SN)
+    # We use decimals [0..1] for math
+    qber_decimal = qber / 100.0
+    qber_sn_decimal = float(noise_config.get("qber_sn", 0.0)) / 100.0
+    
+    # Calculate estimated interception density
+    p_hat = 4.0 * (qber_decimal - qber_sn_decimal)
+    
+    # p_hat logically ranges [0, 1]. Values < 0 mean noise was lower than expected.
+    # Values > 1 mean noise was exceptionally high (e.g. from network flips).
+    p_hat = max(0.0, p_hat) 
 
-    verified = (qber == 0)
+    # Determine "verified" status based on math thresholds instead of pure zero
+    # If p_hat is significantly above 0 (e.g. > 0.05 margin), assume Eve or severe channel noise.
+    verified = (p_hat < 0.10) and (error_count == 0 or noise_config.get("use_hardware_noise", False))
     alice_remaining = None
     if verified:
         alice_remaining = [alice_sifted[i] for i in range(len(alice_sifted)) if i not in sample_indices]
         alice.shared_key = alice_remaining
-        print(f"[Alice] Verified Phase: Key established: {len(alice.shared_key)} bits.")
+        print(f"[Alice] Verified Phase: Key established: {len(alice.shared_key)} bits. (QBER: {qber:.2f}%)")
     else:
-        print(f"[Alice] Verification failed. QBER: {qber:.2f}% "
-              f"({'Eve detected!' if noise_config.get('eve_active') else 'Noise interference'})")
+        print(f"[Alice] Verification failed. QBER: {qber:.2f}%, p_hat: {p_hat:.3f}")
 
     key_metrics = {}
     if verified and alice_remaining is not None:
@@ -537,7 +555,7 @@ def compare_sample():
         "errorCount":      error_count,
         "qber":            qber,
         "p_hat":           p_hat,
-        "qber_sn":         qber_sn,
+        "qber_sn":         noise_config.get("qber_sn", 0.0),
         "verified":        verified,
         "noiseConfig":     noise_config,
         "keyMetrics":      key_metrics,
