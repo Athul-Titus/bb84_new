@@ -23,10 +23,21 @@ const ChatInterface: React.FC = () => {
     const [sending, setSending] = useState(false);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const chatAreaRef = useRef<HTMLDivElement>(null);
     const pollRef = useRef<any>(null);
+    const shouldAutoScroll = useRef(true);
+    const prevMsgCount = useRef(0);
 
     const keyStr = sharedKey.join('');
     const hasKey = keyStr.length > 0;
+
+    // Track if user has scrolled up
+    const handleScroll = () => {
+        if (!chatAreaRef.current) return;
+        const el = chatAreaRef.current;
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+        shouldAutoScroll.current = atBottom;
+    };
 
     // Poll for messages from backend
     useEffect(() => {
@@ -47,15 +58,22 @@ const ChatInterface: React.FC = () => {
         return () => clearInterval(pollRef.current);
     }, [connected]);
 
-    // Auto-scroll to bottom
+    // Only auto-scroll when user is at bottom or new messages arrive
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (messages.length > prevMsgCount.current) {
+            // New message arrived — scroll if user was at bottom
+            if (shouldAutoScroll.current) {
+                messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+        prevMsgCount.current = messages.length;
     }, [messages]);
 
     const handleSend = async () => {
         if (!input.trim() || !hasKey || sending) return;
 
         setSending(true);
+        shouldAutoScroll.current = true; // Always scroll on own send
         try {
             await axios.post('/api/chat/send', {
                 message: input.trim(),
@@ -121,7 +139,7 @@ const ChatInterface: React.FC = () => {
             </div>
 
             {/* Messages Area */}
-            <div className="chat-messages-area">
+            <div className="chat-messages-area" ref={chatAreaRef} onScroll={handleScroll}>
                 {messages.length === 0 && (
                     <div className="chat-empty">
                         <Lock size={32} strokeWidth={1.5} />

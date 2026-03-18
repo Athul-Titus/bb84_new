@@ -4,15 +4,26 @@ import { useProject } from '../context/ProjectContext';
 const LogTerminal: React.FC = () => {
     const { logs } = useProject();
     const bottomRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const shouldAutoScroll = useRef(true);
+
+    const handleScroll = () => {
+        if (!containerRef.current) return;
+        const el = containerRef.current;
+        const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+        shouldAutoScroll.current = atBottom;
+    };
 
     useEffect(() => {
-        bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        if (shouldAutoScroll.current) {
+            bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
     }, [logs]);
 
     return (
         <div className="log-panel">
             <div className="log-panel-title">📋 Activity Log</div>
-            <div className="log-entries">
+            <div className="log-entries" ref={containerRef} onScroll={handleScroll}>
                 {logs.length === 0 ? (
                     <div style={{ color: 'var(--text-faint)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
                         Waiting for activity...
