@@ -123,6 +123,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setBobBits([]);
         setSharedKey([]);
         addLog('info', 'State reset.');
+        axios.post('/api/chat/clear').catch(() => {});
     };
 
     const value: ProjectContextType = {

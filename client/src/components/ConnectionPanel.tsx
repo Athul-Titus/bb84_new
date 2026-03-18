@@ -31,6 +31,7 @@ const ConnectionPanel: React.FC = () => {
                 setPeerIP(ipInput);
                 setConnected(true);
                 addLog('success', `Connected to ${ipInput}`);
+                axios.post('/api/chat/clear').catch(() => {});
             }
         } catch (err: any) {
             addLog('error', err.response?.data?.error || `Failed to connect to ${ipInput}`);
@@ -44,6 +45,7 @@ const ConnectionPanel: React.FC = () => {
         setConnected(false);
         setPeerIP('');
         addLog('warning', 'Disconnected from peer');
+        axios.post('/api/chat/clear').catch(() => {});
     };
 
     return (

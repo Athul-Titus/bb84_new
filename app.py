@@ -931,13 +931,14 @@ def chat_send():
     data = request.json or {}
     message = data.get('message', '')
     sender = data.get('sender', 'unknown')
+    key_str = data.get('key', '')
     
     if not message:
         return jsonify({"error": "Message is required"}), 400
-    if not shared_key_str:
+    if not key_str:
         return jsonify({"error": "No quantum key established yet. Generate keys first."}), 400
     
-    msg_hex, msg_bits, key_used, enc_hex, enc_bits_str = _xor_encrypt(message, shared_key_str)
+    msg_hex, msg_bits, key_used, enc_hex, enc_bits_str = _xor_encrypt(message, key_str)
     
     entry = {
         "id": str(uuid.uuid4()),
@@ -958,16 +959,29 @@ def chat_send():
         try:
             peer_entry = dict(entry)
             peer_entry['sender'] = sender  # keep original sender tag
+            # DO NOT send plaintext over the wire!
+            peer_entry['plaintext'] = "" 
             req_lib.post(f"http://{peer_ip}:5000/api/chat/receive", json=peer_entry, timeout=3)
-            print(f"[Chat] Pushed message to peer {peer_ip}")
+            print(f"[Chat] Pushed encrypted message to peer {peer_ip}")
         except Exception as e:
             print(f"[Chat] Failed to push to peer: {e}")
     
     return jsonify({"success": True, "entry": entry})
 
-@app.route('/api/chat/messages', methods=['GET'])
+@app.route('/api/chat/messages', methods=['POST'])
 def chat_messages_get():
-    return jsonify({"messages": chat_messages})
+    data = request.json or {}
+    key_str = data.get('key', '')
+    
+    processed = []
+    for msg in chat_messages:
+        m = dict(msg)
+        # If we received it from a peer, plaintext is stripped over the wire
+        if not m.get('plaintext') and m.get('encrypted_hex') and key_str:
+            m['plaintext'] = _xor_decrypt(m['encrypted_hex'], key_str)
+        processed.append(m)
+        
+    return jsonify({"messages": processed})
 
 @app.route('/api/eve/intercept', methods=['GET'])
 def eve_intercept():

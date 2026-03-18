@@ -45,7 +45,7 @@ const ChatInterface: React.FC = () => {
 
         const fetchMessages = async () => {
             try {
-                const res = await axios.get('/api/chat/messages');
+                const res = await axios.post('/api/chat/messages', { key: keyStr });
                 const fetched = res.data.messages || [];
                 setMessages(fetched);
             } catch (e) {
@@ -56,7 +56,7 @@ const ChatInterface: React.FC = () => {
         fetchMessages();
         pollRef.current = setInterval(fetchMessages, 1500);
         return () => clearInterval(pollRef.current);
-    }, [connected]);
+    }, [connected, keyStr]);
 
     // Only auto-scroll when user is at bottom or new messages arrive
     useEffect(() => {
@@ -77,13 +77,14 @@ const ChatInterface: React.FC = () => {
         try {
             await axios.post('/api/chat/send', {
                 message: input.trim(),
-                sender: role
+                sender: role,
+                key: keyStr
             });
             setInput('');
             addLog('success', 'Message encrypted & sent securely.');
 
             // Immediately refresh
-            const res = await axios.get('/api/chat/messages');
+            const res = await axios.post('/api/chat/messages', { key: keyStr });
             setMessages(res.data.messages || []);
         } catch (err: any) {
             addLog('error', err.response?.data?.error || 'Failed to send message');
