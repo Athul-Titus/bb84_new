@@ -56,14 +56,14 @@ const AlicePanel: React.FC = () => {
     };
 
     return (
-        <div className="card alice-container">
+        <div className="card">
             <div className="section-title">
-                <Radio size={18} /> Alice (Sender)
+                <Radio size={22} /> Alice (Sender)
             </div>
 
             <div className="input-group">
                 <label>Key Length (Bits)</label>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '12px' }}>
                     <input
                         type="number"
                         min="5"
@@ -75,15 +75,18 @@ const AlicePanel: React.FC = () => {
                         className="btn btn-primary"
                         onClick={handleGenerate}
                         disabled={loading}
+                        style={{ whiteSpace: 'nowrap', padding: '0 32px' }}
                     >
-                        {loading ? <Activity className="animate-pulse" /> : '⚡ Generate'}
+                        {loading ? <Activity className="animate-pulse" /> : '⚡ Generate Qubits'}
                     </button>
                 </div>
             </div>
 
             {aliceBits.length > 0 && (
                 <div className="mt-4">
-                    <div style={{ marginBottom: '5px', fontSize: '12px', color: 'var(--text-muted)' }}>Alice's Bits (Hidden from Eve)</div>
+                    <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Alice's Bits (Hidden from Eve)
+                    </div>
                     <div className="visual-grid">
                         {aliceBits.map((b, i) => (
                             <motion.div
@@ -98,7 +101,9 @@ const AlicePanel: React.FC = () => {
                         ))}
                     </div>
 
-                    <div style={{ marginTop: '10px', marginBottom: '5px', fontSize: '12px', color: 'var(--text-muted)' }}>Bases (+ / x)</div>
+                    <div style={{ marginTop: '24px', marginBottom: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Bases (+ / x)
+                    </div>
                     <div className="visual-grid">
                         {aliceBases.map((base, i) => (
                             <motion.div
@@ -119,9 +124,15 @@ const AlicePanel: React.FC = () => {
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mt-4 p-4 rounded-lg bg-green-900/20 border border-green-500/30"
+                    style={{
+                        marginTop: '32px',
+                        padding: '24px',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--green-success-bg)',
+                        border: '1px solid rgba(26, 127, 55, 0.1)'
+                    }}
                 >
-                    <div style={{ color: 'var(--green)', fontWeight: 'bold', marginBottom: '10px' }}>
+                    <div className="display-font" style={{ color: 'var(--green-success)', fontWeight: 600, fontSize: '18px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         ✅ Secure Shared Key Established
                     </div>
                     <div className="visual-grid">
@@ -132,6 +143,7 @@ const AlicePanel: React.FC = () => {
                                 animate={{ scale: 1 }}
                                 transition={{ delay: i * 0.02 }}
                                 className={`box bit-${b}`}
+                                style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
                             >
                                 {b}
                             </motion.div>

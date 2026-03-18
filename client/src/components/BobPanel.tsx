@@ -155,21 +155,22 @@ const BobPanel: React.FC = () => {
     };
 
     return (
-        <div className="card bob-container">
+        <div className="card">
             <div className="section-title">
-                <Download size={18} /> Bob (Receiver)
+                <Download size={22} /> Bob (Receiver)
             </div>
 
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '32px', flexWrap: 'wrap' }}>
                 <button
                     className="btn btn-primary"
                     onClick={handleFetch}
                     disabled={step > 0}
+                    style={{ padding: '0 24px' }}
                 >
                     📥 Receive Qubits
                 </button>
 
-                <div style={{ width: '1px', background: 'var(--border)' }}></div>
+                <div style={{ width: '1px', background: 'var(--border-strong)', margin: '0 8px' }}></div>
 
                 <button
                     className="btn btn-secondary"
@@ -184,13 +185,13 @@ const BobPanel: React.FC = () => {
                     onClick={handleVerify}
                     disabled={step !== 2}
                 >
-                    🛡️ Verify &amp; Finalize
+                    🛡️ Verify & Finalize
                 </button>
 
                 {step > 0 && (
                     <button
                         className="btn btn-secondary"
-                        style={{ fontSize: 11 }}
+                        style={{ fontSize: 13, padding: '0 16px', marginLeft: 'auto' }}
                         onClick={() => {
                             setStep(0);
                             setQber(null);
@@ -210,31 +211,32 @@ const BobPanel: React.FC = () => {
                     initial={{ opacity: 0, y: -8 }}
                     animate={{ opacity: 1, y: 0 }}
                     style={{
-                        marginBottom: 14,
-                        padding: '8px 12px',
-                        borderRadius: 8,
-                        background: 'var(--orange-bg)',
+                        marginBottom: 24,
+                        padding: '12px 16px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--orange-warning-bg)',
                         border: '1px solid #eed88d',
-                        fontSize: 12,
+                        fontSize: 13,
+                        fontWeight: 500,
                         display: 'flex',
                         gap: 16,
                     }}
                 >
-                    <span style={{ color: 'var(--text-muted)' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
                         Sent: <strong style={{ color: 'var(--text-primary)' }}>{noiseStats.original_count}</strong>
                     </span>
                     {noiseStats.dropped > 0 && (
-                        <span style={{ color: 'var(--blue)' }}>
-                            📦 Lost: <strong>{noiseStats.dropped}</strong> qubits
+                        <span style={{ color: 'var(--accent-blue)' }}>
+                            📦 Lost: <strong>{noiseStats.dropped}</strong>
                         </span>
                     )}
                     {noiseStats.flips > 0 && (
-                        <span style={{ color: 'var(--orange)' }}>
-                            📡 Corrupted: <strong>{noiseStats.flips}</strong> qubits
+                        <span style={{ color: 'var(--orange-warning)' }}>
+                            📡 Corrupted: <strong>{noiseStats.flips}</strong>
                         </span>
                     )}
                     {noiseConfig.eve_active && (
-                        <span style={{ color: 'var(--red)' }}>
+                        <span style={{ color: 'var(--red-error)' }}>
                             🕵️ Eve Active
                         </span>
                     )}
@@ -243,8 +245,10 @@ const BobPanel: React.FC = () => {
 
             {/* Bob's measurements */}
             {bobBits.length > 0 && (
-                <div className="mb-4">
-                    <div style={{ marginBottom: '5px', fontSize: '12px', color: 'var(--text-muted)' }}>Bob's Measurements</div>
+                <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Bob's Measurements
+                    </div>
                     <div className="visual-grid">
                         {bobBits.map((b, i) => (
                             <motion.div
@@ -266,26 +270,26 @@ const BobPanel: React.FC = () => {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     style={{
-                        marginBottom: 14,
-                        padding: '10px 14px',
-                        borderRadius: 10,
+                        marginBottom: 24,
+                        padding: '16px 20px',
+                        borderRadius: 'var(--radius-md)',
                         background: `${qberColor(qber)}15`,
-                        border: `1px solid ${qberColor(qber)}55`,
+                        border: `1px solid ${qberColor(qber)}40`,
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 12,
+                        gap: 16,
                     }}
                 >
-                    <div style={{ fontSize: 22, fontWeight: 900, color: qberColor(qber), fontFamily: 'monospace', minWidth: 60 }}>
+                    <div className="display-font" style={{ fontSize: 28, fontWeight: 600, color: qberColor(qber), minWidth: 80 }}>
                         {qber.toFixed(1)}%
                     </div>
                     <div>
-                        <div style={{ color: qberColor(qber), fontWeight: 700, fontSize: 13 }}>{qberLabel(qber)}</div>
-                        <div style={{ color: '#888', fontSize: 11, marginTop: 2 }}>
-                            QBER (Quantum Bit Error Rate)
-                            {qber > 0 && noiseConfig.eve_active && ' — Eve intercept-resend attack'}
-                            {qber > 0 && !noiseConfig.eve_active && noiseConfig.channel_noise_rate > 0 && ' — channel depolarizing noise'}
-                            {qber > 0 && !noiseConfig.eve_active && noiseConfig.network_noise_rate > 0 && ' — network bit-flip noise'}
+                        <div style={{ color: qberColor(qber), fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{qberLabel(qber)}</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                            Quantum Bit Error Rate (QBER)
+                            {qber > 0 && noiseConfig.eve_active && ' — Intercept & Resend Attack!'}
+                            {qber > 0 && !noiseConfig.eve_active && noiseConfig.channel_noise_rate > 0 && ' — Channel Depolarizing Noise'}
+                            {qber > 0 && !noiseConfig.eve_active && noiseConfig.network_noise_rate > 0 && ' — Network Simulation Noise'}
                         </div>
                     </div>
                 </motion.div>
@@ -296,16 +300,22 @@ const BobPanel: React.FC = () => {
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="mt-4 p-4 rounded-lg bg-green-900/20 border border-green-500/30"
+                    style={{
+                        marginTop: '32px',
+                        padding: '24px',
+                        borderRadius: 'var(--radius-md)',
+                        background: 'var(--green-success-bg)',
+                        border: '1px solid rgba(26, 127, 55, 0.1)'
+                    }}
                 >
-                    <div style={{ color: 'var(--green)', fontWeight: 'bold', marginBottom: '10px' }}>
+                    <div className="display-font" style={{ color: 'var(--green-success)', fontWeight: 600, fontSize: '18px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         ✅ Final Secure Shared Key
                     </div>
                     <div className="visual-grid">
                         <SharedKeyVisual />
                     </div>
-                    <div style={{ fontSize: '12px', marginTop: '10px', color: 'var(--text-muted)' }}>
-                        Efficiency: {efficiency}% | QBER: {qber?.toFixed(2)}%
+                    <div style={{ fontSize: '14px', marginTop: '16px', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        Efficiency: <span style={{ color: 'var(--text-primary)' }}>{efficiency}%</span> | QBER: <span style={{ color: 'var(--text-primary)' }}>{qber?.toFixed(2)}%</span>
                     </div>
                 </motion.div>
             )}
