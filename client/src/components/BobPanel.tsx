@@ -4,12 +4,14 @@ import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
 import { Download, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
+import SecurityMetrics from './SecurityMetrics';
 
 const BobPanel: React.FC = () => {
     const {
         addLog,
         bobBits, bobBases, setBobState,
         setSharedKey,
+        keyMetrics, setKeyMetrics,
         peerIP,
         noiseConfig,
     } = useProject();
@@ -18,6 +20,7 @@ const BobPanel: React.FC = () => {
     const [matches, setMatches] = useState<number[]>([]);
     const [step, setStep] = useState(0); // 0: Ready, 1: Received, 2: Sifted, 3: Verified
     const [qber, setQber] = useState<number | null>(null);
+    const [pHat, setPHat] = useState<number | null>(null);
     const [efficiency, setEfficiency] = useState<number>(0);
     const [noiseStats, setNoiseStats] = useState<{ dropped: number; flips: number; original_count: number } | null>(null);
 
@@ -116,8 +119,14 @@ const BobPanel: React.FC = () => {
                 res = { data: { ...compareRes.data, remainingKey } };
             }
 
-            const { errorCount, qber: newQber, remainingKey } = res.data;
+            const { errorCount, qber: newQber, p_hat: newPHat, remainingKey, keyMetrics: newMetrics } = res.data;
             setQber(newQber);
+            if (newPHat !== undefined) setPHat(newPHat);
+
+            if (newMetrics) {
+                setKeyMetrics(newMetrics);
+                addLog('info', `[Security] Entropy: ${newMetrics.entropy.toFixed(3)} bits | Correlation: ${newMetrics.correlation.toFixed(3)} | Efficiency: ${newMetrics.efficiency.toFixed(1)}%`);
+            }
 
             if (errorCount > 0) {
                 const cause = noiseConfig.eve_active ? '⚠️ Eve detected!' : 'Channel interference';
@@ -195,6 +204,8 @@ const BobPanel: React.FC = () => {
                         onClick={() => {
                             setStep(0);
                             setQber(null);
+                            setPHat(null);
+                            setKeyMetrics(null);
                             setSiftedKey([]);
                             setMatches([]);
                             setNoiseStats(null);
@@ -294,6 +305,8 @@ const BobPanel: React.FC = () => {
                     </div>
                 </motion.div>
             )}
+
+            <SecurityMetrics metrics={keyMetrics} qber={qber} pHat={pHat} />
 
             {/* Finalized key */}
             {step >= 3 && (

@@ -32,6 +32,9 @@ interface ProjectContextType {
     sharedKey: number[];
     setSharedKey: (key: number[]) => void;
 
+    keyMetrics: any;
+    setKeyMetrics: (m: any) => void;
+
     // Network Config
     noiseConfig: any;
     setNoiseConfig: (config: any) => void;
@@ -61,6 +64,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const [bobBits, setBobBits] = useState<number[]>([]);
 
     const [sharedKey, setSharedKey] = useState<number[]>([]);
+    const [keyMetrics, setKeyMetrics] = useState<any>(null);
     const [noiseConfig, setNoiseConfig] = useState<any>({ eve_active: false });
 
     const pollRef = useRef<any>(null);
@@ -122,6 +126,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setBobBases([]);
         setBobBits([]);
         setSharedKey([]);
+        setKeyMetrics(null);
         addLog('info', 'State reset.');
         axios.post('/api/chat/clear').catch(() => {});
     };
@@ -133,6 +138,7 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         aliceBits, aliceBases, setAliceState,
         bobBases, bobBits, setBobState,
         sharedKey, setSharedKey,
+        keyMetrics, setKeyMetrics,
         noiseConfig, setNoiseConfig,
         resetState
     };

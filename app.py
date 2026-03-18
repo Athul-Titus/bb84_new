@@ -10,6 +10,7 @@ import socket
 from qiskit import QuantumCircuit
 import uuid
 import time
+from scipy.stats import entropy as scipy_entropy
 
 # Set template_folder to current directory to find ui.html
 app = Flask(__name__, template_folder=os.getcwd())
@@ -28,6 +29,7 @@ noise_config = {
     "t1_us":               50.0,    # Thermal T1 in microseconds
     "t2_us":               30.0,    # Thermal T2 in microseconds
     "packet_loss_rate":    0.0,     # Probability each qubit is dropped (0–1)
+    "attack_mode":         "none",  # "none" | "eavesdrop" | "mitm" | "dos"
 }
 
 
@@ -150,6 +152,86 @@ def _build_circuits_from_qubit_data(qubit_data):
     return received_qubits
 
 
+# ============================================================
+# IoT Security Paper (Guitouni et al. 2024) — Key Quality Metrics
+# ============================================================
+
+def compute_key_entropy(key_bits: list) -> float:
+    """
+    Shannon entropy of the key bit distribution.
+    Paper benchmark: 0.93 (small keys) to 1.00 (large keys).
+    Formula: H = -Σ p_i * log2(p_i)
+    """
+    if not key_bits or len(key_bits) < 2:
+        return 0.0
+    arr = np.array(key_bits)
+    counts = np.bincount(arr, minlength=2)
+    probs = counts / len(arr)
+    probs = probs[probs > 0]
+    return float(-np.sum(probs * np.log2(probs)))
+
+
+def compute_adjacent_correlation(key_bits: list) -> float:
+    """
+    Pearson correlation between adjacent bits.
+    Paper benchmark: average ≈ -0.01 (ideal near zero).
+    High positive correlation = predictable key = weak.
+    """
+    if not key_bits or len(key_bits) < 3:
+        return 0.0
+    arr = np.array(key_bits, dtype=float)
+    std_a = np.std(arr[:-1])
+    std_b = np.std(arr[1:])
+    if std_a == 0 or std_b == 0:
+        return 1.0 if len(set(key_bits)) == 1 else 0.0
+    return float(np.corrcoef(arr[:-1], arr[1:])[0, 1])
+
+
+def compute_key_efficiency(key_length: int, bits_used: int) -> float:
+    """
+    Protocol efficiency = useful key bits / total bits transmitted.
+    Paper benchmark: average 50.00%, range 48.62%–50.75%.
+    Formula (Eq. 2): E = (key_length / bits_used) * 100
+    """
+    if bits_used == 0:
+        return 0.0
+    return round((key_length / bits_used) * 100, 2)
+
+
+def compute_all_key_metrics(key_bits: list, bits_used: int) -> dict:
+    """Compute all 4 IoT paper metrics for a given key."""
+    return {
+        "entropy":     round(compute_key_entropy(key_bits), 4),
+        "correlation": round(compute_adjacent_correlation(key_bits), 4),
+        "efficiency":  compute_key_efficiency(len(key_bits), bits_used),
+        "key_length":  len(key_bits),
+        "bits_used":   bits_used,
+    }
+
+
+def _apply_attack_mode_preset(mode: str):
+    """
+    IoT paper Section 4.1 — Threats and Attack Vectors.
+    Maps named attack types to noise_config parameter presets.
+    """
+    if mode == "eavesdrop":
+        noise_config["eve_active"] = True
+        noise_config["packet_loss_rate"]     = 0.0
+        noise_config["network_noise_rate"]   = 0.0
+    elif mode == "mitm":
+        noise_config["eve_active"] = True
+        noise_config["network_noise_rate"]   = 0.05
+        noise_config["packet_loss_rate"]     = 0.0
+    elif mode == "dos":
+        noise_config["eve_active"] = False
+        noise_config["packet_loss_rate"]     = 0.40
+        noise_config["network_noise_rate"]   = 0.10
+    elif mode == "none":
+        noise_config["eve_active"] = False
+        noise_config["packet_loss_rate"]     = 0.0
+        noise_config["network_noise_rate"]   = 0.0
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -190,6 +272,39 @@ def set_noise_config():
 def get_noise_config():
     """Return current noise configuration to the frontend."""
     return jsonify(noise_config)
+
+
+@app.route('/api/set_attack_mode', methods=['POST'])
+def set_attack_mode():
+    """
+    IoT paper Section 4.1: Threats and Attack Vectors in IoT Networks.
+    Accepts: { "mode": "none" | "eavesdrop" | "mitm" | "dos" }
+    """
+    data = request.json or {}
+    mode = data.get("mode", "none")
+    if mode not in ("none", "eavesdrop", "mitm", "dos"):
+        return jsonify({"error": "Invalid mode"}), 400
+
+    noise_config["attack_mode"] = mode
+    _apply_attack_mode_preset(mode)
+    print(f"[Attack Mode] Set to: {mode}. Config: {noise_config}")
+    return jsonify({"status": "ok", "attack_mode": mode, "noise_config": noise_config})
+
+
+@app.route('/api/key_metrics', methods=['GET'])
+def get_key_metrics():
+    """
+    Returns IoT paper security metrics for the most recently established key.
+    """
+    key = alice.shared_key
+    if not key:
+        return jsonify({"error": "No key established yet"}), 404
+
+    bits_used = len(alice.raw_bits) if alice.raw_bits else len(key)
+    metrics = compute_all_key_metrics(key, bits_used)
+    metrics["qber_sn"] = noise_config.get("qber_sn", 0.0)
+
+    return jsonify(metrics)
 
 
 # ─── Alice: Generate Keys ────────────────────────────────────────────────────
@@ -398,8 +513,12 @@ def compare_sample():
             error_count += 1
 
     qber = (error_count / total) * 100 if total > 0 else 0
+    qber_sn = noise_config.get("qber_sn", 0.0)
+    p_hat = 4 * (qber - qber_sn) / 100 if qber >= qber_sn else 0.0
 
-    if qber == 0:
+    verified = (qber == 0)
+    alice_remaining = None
+    if verified:
         alice_remaining = [alice_sifted[i] for i in range(len(alice_sifted)) if i not in sample_indices]
         alice.shared_key = alice_remaining
         print(f"[Alice] Verified Phase: Key established: {len(alice.shared_key)} bits.")
@@ -407,12 +526,21 @@ def compare_sample():
         print(f"[Alice] Verification failed. QBER: {qber:.2f}% "
               f"({'Eve detected!' if noise_config.get('eve_active') else 'Noise interference'})")
 
+    key_metrics = {}
+    if verified and alice_remaining is not None:
+        start_metrics = time.time()
+        key_metrics = compute_all_key_metrics(alice_remaining, len(alice_sifted))
+        key_metrics["execution_time_ms"] = round((time.time() - start_metrics) * 1000, 3)
+
     return jsonify({
         "aliceSampleBits": alice_sample_bits,
         "errorCount":      error_count,
         "qber":            qber,
-        "verified":        qber == 0,
+        "p_hat":           p_hat,
+        "qber_sn":         qber_sn,
+        "verified":        verified,
         "noiseConfig":     noise_config,
+        "keyMetrics":      key_metrics,
     })
 
 
@@ -638,8 +766,10 @@ def verify_peer_sample():
             "remainingKey":  remaining,
             "errorCount":    alice_res.get('errorCount'),
             "qber":          alice_res.get('qber'),
+            "p_hat":         alice_res.get('p_hat'),
             "verified":      alice_res.get('verified'),
             "noiseConfig":   alice_res.get('noiseConfig'),
+            "keyMetrics":    alice_res.get('keyMetrics'),
         })
 
     except Exception as e:
@@ -819,6 +949,7 @@ def _xor_decrypt(enc_hex, key_str):
 
 @app.route('/api/qkd/quick_generate', methods=['POST'])
 def qkd_quick_generate():
+    start_time = time.time()
     global shared_key_str
     data = request.json or {}
     length = int(data.get('length', 20))
@@ -854,6 +985,9 @@ def qkd_quick_generate():
     if not shared_key_str:
         shared_key_str = "0"
         
+    key_metrics = compute_all_key_metrics(final_key, length)
+    key_metrics["execution_time_ms"] = round((time.time() - start_time) * 1000, 3)
+
     return jsonify({
         "rawBits": raw_bits,
         "aliceBases": alice_bases,
@@ -864,7 +998,8 @@ def qkd_quick_generate():
         "finalKey": final_key,
         "keyLength": len(final_key),
         "qber": qber,
-        "shared_key": shared_key_str
+        "shared_key": shared_key_str,
+        "keyMetrics": key_metrics
     })
 
 # ─── P2P Secure Messaging Endpoints ──────────────────────────────────────────

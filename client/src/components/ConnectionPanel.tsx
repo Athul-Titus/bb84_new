@@ -111,6 +111,80 @@ const ConnectionPanel: React.FC = () => {
                     </button>
                 </div>
             </div>
+            
+            {/* Attack Mode panel (Guitouni et al. Section 4.1) */}
+            <AttackModeSelector />
+        </div>
+    );
+};
+
+const AttackModeSelector: React.FC = () => {
+    const { addLog } = useProject();
+    const [mode, setMode] = useState<string>('none');
+
+    const modes = [
+        {
+            id: 'none',
+            label: 'No Attack',
+            desc: 'Clean channel. No Eve, no noise.',
+            color: 'var(--green-success)',
+        },
+        {
+            id: 'eavesdrop',
+            label: 'Eavesdropping',
+            desc: 'Eve intercepts qubits (intercept-and-resend).',
+            color: 'var(--amber-warning)',
+        },
+        {
+            id: 'mitm',
+            label: 'Man-in-the-Middle',
+            desc: 'Eve intercepts all qubits + injects noise into classical channel.',
+            color: 'var(--orange-warning)',
+        },
+        {
+            id: 'dos',
+            label: 'Denial of Service',
+            desc: 'Heavy packet loss (40%) + channel noise. Key may fail to establish.',
+            color: 'var(--red-danger)',
+        },
+    ];
+
+    const handleSelect = async (newMode: string) => {
+        setMode(newMode);
+        await axios.post('/api/set_attack_mode', { mode: newMode });
+        addLog('info', `[Attack Mode] Set to: ${newMode}`);
+    };
+
+    return (
+        <div style={{ marginTop: '8px' }}>
+            <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Attack Simulation (IoT Paper §4.1)
+            </label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
+                {modes.map(m => (
+                    <button
+                        key={m.id}
+                        onClick={() => handleSelect(m.id)}
+                        style={{
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            border: `1px solid ${mode === m.id ? m.color : 'var(--border-light)'}`,
+                            background: mode === m.id ? `${m.color}14` : 'var(--bg-card)',
+                            color: mode === m.id ? m.color : 'var(--text-secondary)',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            transition: 'all 0.15s ease',
+                        }}
+                    >
+                        <div>{m.label}</div>
+                        <div style={{ fontWeight: 400, fontSize: '11px', marginTop: '3px', opacity: 0.75 }}>
+                            {m.desc}
+                        </div>
+                    </button>
+                ))}
+            </div>
         </div>
     );
 };

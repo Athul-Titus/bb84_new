@@ -4,3 +4,4 @@ qiskit
 qiskit-aer
 requests
 flask-cors
+scipy
