@@ -10,21 +10,23 @@ const LogTerminal: React.FC = () => {
     }, [logs]);
 
     return (
-        <div className="log-terminal">
-            <div className="log-terminal__title">📋 Activity Log</div>
-            {logs.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: '11px', fontFamily: 'var(--font-mono)' }}>
-                    Waiting for activity...
-                </div>
-            ) : (
-                logs.slice(-20).map((log, i) => (
-                    <div key={i} className={`log-entry log-entry--${log.type}`}>
-                        <span className="log-entry__time">{log.time}</span>
-                        {log.message}
+        <div className="log-panel">
+            <div className="log-panel-title">📋 Activity Log</div>
+            <div className="log-entries">
+                {logs.length === 0 ? (
+                    <div style={{ color: 'var(--text-faint)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
+                        Waiting for activity...
                     </div>
-                ))
-            )}
-            <div ref={bottomRef} />
+                ) : (
+                    logs.slice(-30).map((log, i) => (
+                        <div key={i} className={`log-entry log-entry--${log.type}`}>
+                            <span className="log-entry__time">{log.time}</span>
+                            {log.message}
+                        </div>
+                    ))
+                )}
+                <div ref={bottomRef} />
+            </div>
         </div>
     );
 };

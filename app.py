@@ -790,6 +790,33 @@ def _xor_encrypt(plaintext, key_str):
     return msg_hex, msg_bits, key_used, enc_hex, enc_bits_str
 
 
+def _xor_decrypt(enc_hex, key_str):
+    """Decrypt a hex-encoded ciphertext using XOR with key_str."""
+    if not enc_hex or not key_str:
+        return ""
+    try:
+        hex_len = len(enc_hex)
+        enc_int = int(enc_hex, 16)
+        enc_bits_str = format(enc_int, f'0{hex_len * 4}b')
+        enc_bits = [int(b) for b in enc_bits_str]
+
+        key_len = len(key_str)
+        decrypted_bits = []
+        for i, bit in enumerate(enc_bits):
+            k_bit = int(key_str[i % key_len]) if key_len > 0 else 0
+            decrypted_bits.append(bit ^ k_bit)
+
+        msg_bytes = bytearray()
+        for i in range(0, len(decrypted_bits), 8):
+            byte_bits = decrypted_bits[i:i + 8]
+            if len(byte_bits) == 8:
+                msg_bytes.append(int(''.join(map(str, byte_bits)), 2))
+
+        return msg_bytes.decode('utf-8').rstrip('\x00')
+    except Exception:
+        return "<decryption failed>"
+
+
 @app.route('/api/qkd/quick_generate', methods=['POST'])
 def qkd_quick_generate():
     global shared_key_str
@@ -900,9 +927,15 @@ def fetch_message_from_peer():
 
 @app.route('/api/chat/send', methods=['POST'])
 def chat_send():
+    import requests as req_lib
     data = request.json or {}
     message = data.get('message', '')
-    sender = data.get('sender', 'alice')
+    sender = data.get('sender', 'unknown')
+    
+    if not message:
+        return jsonify({"error": "Message is required"}), 400
+    if not shared_key_str:
+        return jsonify({"error": "No quantum key established yet. Generate keys first."}), 400
     
     msg_hex, msg_bits, key_used, enc_hex, enc_bits_str = _xor_encrypt(message, shared_key_str)
     
@@ -918,6 +951,18 @@ def chat_send():
         "timestamp": int(time.time())
     }
     chat_messages.append(entry)
+    
+    # Push to the connected peer
+    peer_ip = noise_config.get('connected_peer_ip', '')
+    if peer_ip:
+        try:
+            peer_entry = dict(entry)
+            peer_entry['sender'] = sender  # keep original sender tag
+            req_lib.post(f"http://{peer_ip}:5000/api/chat/receive", json=peer_entry, timeout=3)
+            print(f"[Chat] Pushed message to peer {peer_ip}")
+        except Exception as e:
+            print(f"[Chat] Failed to push to peer: {e}")
+    
     return jsonify({"success": True, "entry": entry})
 
 @app.route('/api/chat/messages', methods=['GET'])

@@ -57,8 +57,8 @@ const AlicePanel: React.FC = () => {
 
     return (
         <div className="card alice-container">
-            <div className="section-title" style={{ color: '#00bcd4' }}>
-                <Radio /> Alice (Sender)
+            <div className="section-title">
+                <Radio size={18} /> Alice (Sender)
             </div>
 
             <div className="input-group">
@@ -83,7 +83,7 @@ const AlicePanel: React.FC = () => {
 
             {aliceBits.length > 0 && (
                 <div className="mt-4">
-                    <div style={{ marginBottom: '5px', fontSize: '12px', color: '#999' }}>Alice's Bits (Hidden from Eve)</div>
+                    <div style={{ marginBottom: '5px', fontSize: '12px', color: 'var(--text-muted)' }}>Alice's Bits (Hidden from Eve)</div>
                     <div className="visual-grid">
                         {aliceBits.map((b, i) => (
                             <motion.div
@@ -98,7 +98,7 @@ const AlicePanel: React.FC = () => {
                         ))}
                     </div>
 
-                    <div style={{ marginTop: '10px', marginBottom: '5px', fontSize: '12px', color: '#999' }}>Bases (+ / x)</div>
+                    <div style={{ marginTop: '10px', marginBottom: '5px', fontSize: '12px', color: 'var(--text-muted)' }}>Bases (+ / x)</div>
                     <div className="visual-grid">
                         {aliceBases.map((base, i) => (
                             <motion.div
@@ -121,7 +121,7 @@ const AlicePanel: React.FC = () => {
                     animate={{ opacity: 1, y: 0 }}
                     className="mt-4 p-4 rounded-lg bg-green-900/20 border border-green-500/30"
                 >
-                    <div style={{ color: '#4caf50', fontWeight: 'bold', marginBottom: '10px' }}>
+                    <div style={{ color: 'var(--green)', fontWeight: 'bold', marginBottom: '10px' }}>
                         ✅ Secure Shared Key Established
                     </div>
                     <div className="visual-grid">

@@ -142,10 +142,10 @@ const BobPanel: React.FC = () => {
 
     // QBER colour helpers
     const qberColor = (q: number) => {
-        if (q === 0) return '#4caf50';
-        if (q < 5) return '#8bc34a';
-        if (q < 20) return '#ff9800';
-        return '#f44336';
+        if (q === 0) return 'var(--green)';
+        if (q < 5) return '#6b8e23';
+        if (q < 20) return 'var(--orange)';
+        return 'var(--red)';
     };
     const qberLabel = (q: number) => {
         if (q === 0) return '✅ Secure';
@@ -156,21 +156,20 @@ const BobPanel: React.FC = () => {
 
     return (
         <div className="card bob-container">
-            <div className="section-title" style={{ color: '#ff9800' }}>
-                <Download /> Bob (Receiver)
+            <div className="section-title">
+                <Download size={18} /> Bob (Receiver)
             </div>
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap' }}>
                 <button
                     className="btn btn-primary"
-                    style={{ backgroundColor: '#ff9800', backgroundImage: 'linear-gradient(135deg, #ff9800 0%, #ffed4e 100%)' }}
                     onClick={handleFetch}
                     disabled={step > 0}
                 >
                     📥 Receive Qubits
                 </button>
 
-                <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                <div style={{ width: '1px', background: 'var(--border)' }}></div>
 
                 <button
                     className="btn btn-secondary"
@@ -214,28 +213,28 @@ const BobPanel: React.FC = () => {
                         marginBottom: 14,
                         padding: '8px 12px',
                         borderRadius: 8,
-                        background: 'rgba(255,152,0,0.08)',
-                        border: '1px solid rgba(255,152,0,0.3)',
+                        background: 'var(--orange-bg)',
+                        border: '1px solid #eed88d',
                         fontSize: 12,
                         display: 'flex',
                         gap: 16,
                     }}
                 >
-                    <span style={{ color: '#888' }}>
-                        Sent: <strong style={{ color: '#ddd' }}>{noiseStats.original_count}</strong>
+                    <span style={{ color: 'var(--text-muted)' }}>
+                        Sent: <strong style={{ color: 'var(--text-primary)' }}>{noiseStats.original_count}</strong>
                     </span>
                     {noiseStats.dropped > 0 && (
-                        <span style={{ color: '#00bcd4' }}>
+                        <span style={{ color: 'var(--blue)' }}>
                             📦 Lost: <strong>{noiseStats.dropped}</strong> qubits
                         </span>
                     )}
                     {noiseStats.flips > 0 && (
-                        <span style={{ color: '#ff9800' }}>
+                        <span style={{ color: 'var(--orange)' }}>
                             📡 Corrupted: <strong>{noiseStats.flips}</strong> qubits
                         </span>
                     )}
                     {noiseConfig.eve_active && (
-                        <span style={{ color: '#ff4444' }}>
+                        <span style={{ color: 'var(--red)' }}>
                             🕵️ Eve Active
                         </span>
                     )}
@@ -245,7 +244,7 @@ const BobPanel: React.FC = () => {
             {/* Bob's measurements */}
             {bobBits.length > 0 && (
                 <div className="mb-4">
-                    <div style={{ marginBottom: '5px', fontSize: '12px', color: '#999' }}>Bob's Measurements</div>
+                    <div style={{ marginBottom: '5px', fontSize: '12px', color: 'var(--text-muted)' }}>Bob's Measurements</div>
                     <div className="visual-grid">
                         {bobBits.map((b, i) => (
                             <motion.div
@@ -299,13 +298,13 @@ const BobPanel: React.FC = () => {
                     animate={{ opacity: 1, y: 0 }}
                     className="mt-4 p-4 rounded-lg bg-green-900/20 border border-green-500/30"
                 >
-                    <div style={{ color: '#4caf50', fontWeight: 'bold', marginBottom: '10px' }}>
+                    <div style={{ color: 'var(--green)', fontWeight: 'bold', marginBottom: '10px' }}>
                         ✅ Final Secure Shared Key
                     </div>
                     <div className="visual-grid">
                         <SharedKeyVisual />
                     </div>
-                    <div style={{ fontSize: '12px', marginTop: '10px', color: '#aaa' }}>
+                    <div style={{ fontSize: '12px', marginTop: '10px', color: 'var(--text-muted)' }}>
                         Efficiency: {efficiency}% | QBER: {qber?.toFixed(2)}%
                     </div>
                 </motion.div>

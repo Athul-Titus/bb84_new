@@ -3,7 +3,7 @@ import ConnectionPanel from './components/ConnectionPanel';
 import AlicePanel from './components/AlicePanel';
 import BobPanel from './components/BobPanel';
 import LogTerminal from './components/LogTerminal';
-import Messaging from './components/Messaging';
+import ChatInterface from './components/ChatInterface';
 import { useProject } from './context/ProjectContext';
 import { User, Download } from 'lucide-react';
 
@@ -40,7 +40,7 @@ const App: React.FC = () => {
             </>
           )}
 
-          {connected && <Messaging />}
+          {connected && <ChatInterface />}
 
         </div>
 
@@ -53,3 +53,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+
