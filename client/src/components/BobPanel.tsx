@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
-import { Download, ShieldCheck, AlertTriangle } from 'lucide-react';
+import { Download, ShieldCheck, AlertTriangle, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
 import SecurityMetrics from './SecurityMetrics';
 
@@ -24,7 +24,12 @@ const BobPanel: React.FC = () => {
         noiseStats, setNoiseStats
     } = useProject();
 
+    const [isReceiving, setIsReceiving] = useState(false);
+    const [isSifting, setIsSifting] = useState(false);
+    const [isVerifying, setIsVerifying] = useState(false);
+
     const handleFetch = async () => {
+        setIsReceiving(true);
         try {
             addLog('info', 'Bob receiving qubits...');
 
@@ -65,10 +70,13 @@ const BobPanel: React.FC = () => {
             }
         } catch (err: any) {
             addLog('error', err.message || 'Fetch failed');
+        } finally {
+            setIsReceiving(false);
         }
     };
 
     const handleSift = async () => {
+        setIsSifting(true);
         try {
             let aliceBasesToUse: number[] = [];
 
@@ -92,10 +100,13 @@ const BobPanel: React.FC = () => {
             addLog('success', `Sifting complete. Kept ${res.data.siftedKey.length} bits.`);
         } catch (err: any) {
             addLog('error', err.response?.data?.error || err.message);
+        } finally {
+            setIsSifting(false);
         }
     };
 
     const handleVerify = async () => {
+        setIsVerifying(true);
         try {
             addLog('info', 'Sampling bits for verification...');
 
@@ -149,6 +160,8 @@ const BobPanel: React.FC = () => {
 
         } catch (err: any) {
             addLog('error', err.response?.data?.error || err.message);
+        } finally {
+            setIsVerifying(false);
         }
     };
 
@@ -176,10 +189,10 @@ const BobPanel: React.FC = () => {
                 <button
                     className="btn btn-primary"
                     onClick={handleFetch}
-                    disabled={step > 0}
-                    style={{ padding: '0 24px' }}
+                    disabled={step > 0 || isReceiving}
+                    style={{ padding: '0 24px', display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                    📥 Receive Qubits
+                    {isReceiving ? <><Activity size={16} className="animate-pulse" /> Receiving...</> : '📥 Receive Qubits'}
                 </button>
 
                 <div style={{ width: '1px', background: 'var(--border-strong)', margin: '0 8px' }}></div>
@@ -187,17 +200,19 @@ const BobPanel: React.FC = () => {
                 <button
                     className="btn btn-secondary"
                     onClick={handleSift}
-                    disabled={step !== 1}
+                    disabled={step !== 1 || isSifting}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                    🔍 Sift Keys
+                    {isSifting ? <><Activity size={16} className="animate-pulse" /> Sifting...</> : '🔍 Sift Keys'}
                 </button>
 
                 <button
                     className="btn btn-secondary"
                     onClick={handleVerify}
-                    disabled={step !== 2}
+                    disabled={step !== 2 || isVerifying}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                 >
-                    🛡️ Verify & Finalize
+                    {isVerifying ? <><Activity size={16} className="animate-pulse" /> Verifying...</> : '🛡️ Verify & Finalize'}
                 </button>
 
                 {step > 0 && (
@@ -258,8 +273,28 @@ const BobPanel: React.FC = () => {
                 </motion.div>
             )}
 
+            {/* Receiving Placeholder */}
+            {isReceiving && bobBits.length === 0 && (
+                <div style={{ marginBottom: '24px' }}>
+                    <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        📡 Traversing Quantum Channel...
+                    </div>
+                    <div className="visual-grid">
+                        {Array.from({ length: 40 }).map((_, i) => (
+                            <motion.div
+                                key={i}
+                                animate={{ opacity: [0.1, 0.4, 0.1], scale: [0.95, 1, 0.95] }}
+                                transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.05 }}
+                                className="box"
+                                style={{ background: 'var(--bg-hover)', border: '1px dashed var(--border-light)' }}
+                            />
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Bob's measurements */}
-            {bobBits.length > 0 && (
+            {!isReceiving && bobBits.length > 0 && (
                 <div style={{ marginBottom: '24px' }}>
                     <div style={{ marginBottom: '8px', fontSize: '13px', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                         Bob's Measurements
