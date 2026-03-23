@@ -305,11 +305,11 @@ const BobPanel: React.FC = () => {
                             <span><strong>QBER</strong>: {qber.toFixed(1)}%</span>
                             {pHat !== null && (
                                 <span style={{ color: pHat > 0.05 ? 'var(--red-error)' : 'inherit' }}>
-                                    <strong>Est. Intrusion ($\hat{{p}}$)</strong>: {pHat.toFixed(3)}
+                                    <strong>Est. Intrusion (p̂)</strong>: {pHat.toFixed(3)}
                                 </span>
                             )}
                             {qberSn !== null && noiseConfig.use_hardware_noise && (
-                                <span><strong>Baseline Noise ($QBER_{{SN}}$)</strong>: {qberSn}%</span>
+                                <span><strong>Baseline Noise (QBER_SN)</strong>: {qberSn}%</span>
                             )}
                         </div>
                     </div>
