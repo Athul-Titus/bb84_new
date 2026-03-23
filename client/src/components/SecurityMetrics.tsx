@@ -123,10 +123,10 @@ const SecurityMetrics: React.FC<Props> = ({ metrics, qber, pHat }) => {
     );
   }
 
-  const qberStatus     = qber     !== null ? getQberStatus(qber)                  : null;
-  const entropyStatus  = metrics  ? getEntropyStatus(metrics.entropy)             : null;
-  const corrStatus     = metrics  ? getCorrelationStatus(metrics.correlation)     : null;
-  const effStatus      = metrics  ? getEfficiencyStatus(metrics.efficiency)       : null;
+  const qberStatus     = typeof qber === 'number'     ? getQberStatus(qber)                  : null;
+  const entropyStatus  = metrics && typeof metrics.entropy === 'number'  ? getEntropyStatus(metrics.entropy)             : null;
+  const corrStatus     = metrics && typeof metrics.correlation === 'number'  ? getCorrelationStatus(metrics.correlation)     : null;
+  const effStatus      = metrics && typeof metrics.efficiency === 'number'  ? getEfficiencyStatus(metrics.efficiency)       : null;
 
   return (
     <div>

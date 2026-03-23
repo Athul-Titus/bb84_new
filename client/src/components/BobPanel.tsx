@@ -123,24 +123,24 @@ const BobPanel: React.FC = () => {
             }
 
             const { errorCount, qber: newQber, p_hat: newPHat, p_hat, qber_sn, remainingKey, keyMetrics: newMetrics } = res.data;
-            setQber(newQber);
+            if (typeof newQber === 'number') setQber(newQber);
             if (newPHat !== undefined) setPHat(newPHat);
             else if (p_hat !== undefined) setPHat(p_hat);
             if (qber_sn !== undefined) setQberSn(qber_sn);
 
-            if (newMetrics) {
+            if (newMetrics && Object.keys(newMetrics).length > 0) {
                 setKeyMetrics(newMetrics);
-                addLog('info', `[Security] Entropy: ${newMetrics.entropy.toFixed(3)} bits | Correlation: ${newMetrics.correlation.toFixed(3)} | Efficiency: ${newMetrics.efficiency.toFixed(1)}%`);
+                addLog('info', `[Security] Entropy: ${newMetrics.entropy?.toFixed(3)} bits | Correlation: ${newMetrics.correlation?.toFixed(3)} | Efficiency: ${newMetrics.efficiency?.toFixed(1)}%`);
+            } else {
+                setKeyMetrics(null);
             }
 
             if (res.data.verified) {
-                addLog('success', `Verification Success! QBER: ${newQber.toFixed(2)}% | Est. p_hat: ${p_hat?.toFixed(3)}`);
+                addLog('success', `Verification Success! QBER: ${newQber?.toFixed(2)}% | Est. p_hat: ${p_hat?.toFixed(3)}`);
             } else {
-                addLog('error', `QBER: ${newQber.toFixed(2)}% (${errorCount} errors) — Est. p_hat: ${p_hat?.toFixed(3)} | Verification Failed.`);
-                if (newQber > 20 || (p_hat && p_hat > 0.1)) {
-                    addLog('error', 'Critical security threshold breached. Aborting key exchange.');
-                    return;
-                }
+                addLog('error', `QBER: ${newQber?.toFixed(2)}% (${errorCount} errors) — Est. p_hat: ${p_hat?.toFixed(3)} | Verification Failed.`);
+                addLog('error', 'Aborting key exchange due to verification failure.');
+                return;
             }
 
             setSharedKey(remainingKey);
@@ -281,7 +281,7 @@ const BobPanel: React.FC = () => {
             )}
 
             {/* QBER indicator */}
-            {qber !== null && (
+            {typeof qber === 'number' && (
                 <motion.div
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
