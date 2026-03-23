@@ -60,26 +60,28 @@ class Bob(Node):
         self.bob_bases = [secrets.choice([0, 1]) for _ in range(num_qubits)]
         self.measured_bits = []
 
+        circuits_to_run = []
         for i, qc in enumerate(encoded_qubits):
             # The circuit 'qc' is already prepared by Alice (state |0>, |1>, |+>, or |->)
 
             # If Bob chooses Rectilinear (0): Measure in Z-basis (no extra gate)
             # If Bob chooses Diagonal (1):  Apply H then measure (X-basis)
-
             measure_circuit = qc.copy()
-
             if self.bob_bases[i] == 1:
                 measure_circuit.h(0)
 
             # Add measurement
             measure_circuit.measure_all()
+            circuits_to_run.append(measure_circuit)
 
-            # Transpile circuit to native basis gates supported by the simulator
-            compiled_circuit = transpile(measure_circuit, simulator)
+        # Transpile all circuits at once
+        compiled_circuits = transpile(circuits_to_run, simulator)
 
-            # Run simulation (single shot — as in physical photon detection)
-            result = simulator.run(compiled_circuit, shots=1, memory=True).result()
-            measured_bit_str = result.get_memory()[0]
+        # Run all circuits in a single batch
+        result = simulator.run(compiled_circuits, shots=1, memory=True).result()
+
+        for i in range(num_qubits):
+            measured_bit_str = result.get_memory(i)[0]
 
             # Parse first valid '0' or '1' character from result string
             valid_char = '0'
