@@ -14,16 +14,15 @@ const BobPanel: React.FC = () => {
         keyMetrics, setKeyMetrics,
         peerIP,
         noiseConfig,
+        bobStep: step, setBobStep: setStep,
+        siftedKey, setSiftedKey,
+        matches, setMatches,
+        qber, setQber,
+        pHat, setPHat,
+        qberSn, setQberSn,
+        efficiency, setEfficiency,
+        noiseStats, setNoiseStats
     } = useProject();
-
-    const [siftedKey, setSiftedKey] = useState<number[]>([]);
-    const [matches, setMatches] = useState<number[]>([]);
-    const [step, setStep] = useState(0); // 0: Ready, 1: Received, 2: Sifted, 3: Verified
-    const [qber, setQber] = useState<number | null>(null);
-    const [pHat, setPHat] = useState<number | null>(null);
-    const [qberSn, setQberSn] = useState<number | null>(null);
-    const [efficiency, setEfficiency] = useState<number>(0);
-    const [noiseStats, setNoiseStats] = useState<{ dropped: number; flips: number; original_count: number } | null>(null);
 
     const handleFetch = async () => {
         try {

@@ -32,6 +32,23 @@ interface ProjectContextType {
     sharedKey: number[];
     setSharedKey: (key: number[]) => void;
 
+    bobStep: number;
+    setBobStep: (step: number) => void;
+    siftedKey: number[];
+    setSiftedKey: (key: number[]) => void;
+    matches: number[];
+    setMatches: (matches: number[]) => void;
+    qber: number | null;
+    setQber: (qber: number | null) => void;
+    pHat: number | null;
+    setPHat: (pHat: number | null) => void;
+    qberSn: number | null;
+    setQberSn: (qberSn: number | null) => void;
+    efficiency: number;
+    setEfficiency: (eff: number) => void;
+    noiseStats: any;
+    setNoiseStats: (stats: any | null) => void;
+
     keyMetrics: any;
     setKeyMetrics: (m: any) => void;
 
@@ -62,6 +79,15 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const [bobBases, setBobBases] = useState<number[]>([]);
     const [bobBits, setBobBits] = useState<number[]>([]);
+
+    const [bobStep, setBobStep] = useState<number>(0);
+    const [siftedKey, setSiftedKey] = useState<number[]>([]);
+    const [matches, setMatches] = useState<number[]>([]);
+    const [qber, setQber] = useState<number | null>(null);
+    const [pHat, setPHat] = useState<number | null>(null);
+    const [qberSn, setQberSn] = useState<number | null>(null);
+    const [efficiency, setEfficiency] = useState<number>(0);
+    const [noiseStats, setNoiseStats] = useState<any | null>(null);
 
     const [sharedKey, setSharedKey] = useState<number[]>([]);
     const [keyMetrics, setKeyMetrics] = useState<any>(null);
@@ -126,6 +152,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setBobBases([]);
         setBobBits([]);
         setSharedKey([]);
+        setBobStep(0);
+        setSiftedKey([]);
+        setMatches([]);
+        setQber(null);
+        setPHat(null);
+        setQberSn(null);
+        setEfficiency(0);
+        setNoiseStats(null);
         setKeyMetrics(null);
         addLog('info', 'State reset.');
         axios.post('/api/chat/clear').catch(() => {});
@@ -138,6 +172,14 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         aliceBits, aliceBases, setAliceState,
         bobBases, bobBits, setBobState,
         sharedKey, setSharedKey,
+        bobStep, setBobStep,
+        siftedKey, setSiftedKey,
+        matches, setMatches,
+        qber, setQber,
+        pHat, setPHat,
+        qberSn, setQberSn,
+        efficiency, setEfficiency,
+        noiseStats, setNoiseStats,
         keyMetrics, setKeyMetrics,
         noiseConfig, setNoiseConfig,
         resetState
