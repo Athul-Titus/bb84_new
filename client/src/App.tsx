@@ -6,14 +6,15 @@ import AlicePanel from './components/AlicePanel';
 import BobPanel from './components/BobPanel';
 import LogTerminal from './components/LogTerminal';
 import ChatInterface from './components/ChatInterface';
+import ProjectOverview from './components/ProjectOverview';
 import { useProject } from './context/ProjectContext';
-import { User, Download, Activity, Key, MessageSquare, ShieldCheck } from 'lucide-react';
+import { User, Download, Activity, Key, MessageSquare, ShieldCheck, Home } from 'lucide-react';
 
-type Tab = 'dashboard' | 'lab' | 'chat';
+type Tab = 'overview' | 'dashboard' | 'lab' | 'chat';
 
 const App: React.FC = () => {
     const { role, setRole, connected } = useProject();
-    const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+    const [activeTab, setActiveTab] = useState<Tab>('overview');
 
     return (
         <div className="app-container">
@@ -24,6 +25,12 @@ const App: React.FC = () => {
                 </div>
 
                 <nav className="nav-links">
+                    <button
+                        className={`nav-btn ${activeTab === 'overview' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('overview')}
+                    >
+                        <Home size={20} /> Overview
+                    </button>
                     <button
                         className={`nav-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
                         onClick={() => setActiveTab('dashboard')}
@@ -68,6 +75,20 @@ const App: React.FC = () => {
             {/* ── Main Content Area ── */}
             <main className="main-content">
                 <AnimatePresence mode="wait">
+                    {activeTab === 'overview' && (
+                        <motion.div
+                            key="overview"
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            transition={{ duration: 0.2 }}
+                            className="tab-view overview-view"
+                            style={{ padding: 0 }}
+                        >
+                            <ProjectOverview onGetStarted={() => setActiveTab('dashboard')} />
+                        </motion.div>
+                    )}
+
                     {activeTab === 'dashboard' && (
                         <motion.div
                             key="dashboard"
