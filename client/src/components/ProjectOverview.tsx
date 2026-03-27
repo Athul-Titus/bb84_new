@@ -1,13 +1,14 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
-import { Shield, Zap, Cpu, Network, KeyRound, ArrowRight } from 'lucide-react';
+import { Shield, Zap, Cpu, Network, KeyRound, ArrowRight, RefreshCw } from 'lucide-react';
 
 interface ProjectOverviewProps {
   onGetStarted: () => void;
+  onCompare: () => void;
 }
 
-const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted }) => {
+const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted, onCompare }) => {
   const containerVariants: Variants = {
     hidden: { opacity: 0 },
     show: {
@@ -36,11 +37,10 @@ const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted }) => {
         margin: '0 auto',
         minHeight: '100%',
         display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center'
+        flexDirection: 'column'
       }}
     >
-      <motion.div variants={itemVariants} style={{ textAlign: 'center', marginBottom: '60px' }}>
+      <motion.div variants={itemVariants} style={{ textAlign: 'center', marginBottom: '60px', paddingTop: '40px' }}>
         <motion.div 
           initial={{ scale: 0.8, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -77,7 +77,7 @@ const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted }) => {
           Quantum Key Distribution
         </h1>
         <p style={{ fontSize: '18px', color: 'var(--text-secondary)', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>
-          Ascone Secure is an advanced end-to-end simulation of the <strong style={{ color: 'var(--text-primary)'}}>BB84 Protocol</strong>. 
+          QSafe is an advanced end-to-end simulation of the <strong style={{ color: 'var(--text-primary)'}}>BB84 Protocol</strong>. 
           Harness the foundational laws of quantum mechanics to establish mathematically unbreakable cryptographic keys across untrusted networks.
         </p>
       </motion.div>
@@ -118,10 +118,21 @@ const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted }) => {
             Alice and Bob then communicate over a classical public channel to sift out mismatched bases to form a <strong>Shared Key</strong>.
           </p>
         </motion.div>
+
+        {/* Card 4 - The Novelty */}
+        <motion.div variants={itemVariants} className="overview-card" style={{...cardStyle, border: '1px solid var(--accent-blue)', boxShadow: '0 8px 32px rgba(88,101,242,0.1)'}}>
+          <div style={{ ...iconWrapperStyle, background: 'linear-gradient(135deg, rgba(88,101,242,0.2), rgba(46,204,113,0.2))' }}>
+            <RefreshCw size={24} style={{ color: 'var(--accent-blue)' }} />
+          </div>
+          <h3 style={cardTitleStyle}>4. Recursive BB84 (Our Novelty)</h3>
+          <p style={cardTextStyle}>
+            Standard BB84 peaks at ~50% efficiency. Our system uses a mathematically derived <strong>Rolling Bias</strong>, dynamically altering probability distributions based on the previous shared key to radically boost sifting efficiency without compromising theoretical security.
+          </p>
+        </motion.div>
         
       </motion.div>
 
-      <motion.div variants={itemVariants} style={{ textAlign: 'center' }}>
+      <motion.div variants={itemVariants} style={{ textAlign: 'center', display: 'flex', gap: '16px', justifyContent: 'center' }}>
         <motion.button 
           whileHover={{ scale: 1.05, boxShadow: '0 10px 30px rgba(88,101,242,0.3)' }}
           whileTap={{ scale: 0.95 }}
@@ -142,6 +153,28 @@ const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted }) => {
           }}
         >
           Initialize QKD Network <ArrowRight size={18} />
+        </motion.button>
+
+        <motion.button 
+          whileHover={{ scale: 1.05, background: 'var(--bg-hover)' }}
+          whileTap={{ scale: 0.95 }}
+          onClick={onCompare}
+          style={{
+            fontSize: '16px',
+            padding: '16px 32px',
+            borderRadius: '999px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '10px',
+            background: 'transparent',
+            border: '1px solid var(--border-light)',
+            color: 'var(--text-primary)',
+            fontWeight: 600,
+            cursor: 'pointer',
+            transition: 'background 0.2s ease'
+          }}
+        >
+          Compare Protocols
         </motion.button>
       </motion.div>
     </motion.div>

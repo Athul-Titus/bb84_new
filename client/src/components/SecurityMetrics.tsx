@@ -19,7 +19,7 @@ interface Props {
   pHat: number | null;
 }
 
-// Thresholds based on IoT paper benchmarks + BB84 security theory
+// Thresholds based on BB84 security theory
 const getQberStatus = (qber: number) => {
   if (qber < 5)   return { color: 'var(--green-success)', label: 'Secure',    icon: 'shield' };
   if (qber < 11)  return { color: 'var(--amber-warning)', label: 'Warning',   icon: 'alert'  };
@@ -52,8 +52,7 @@ const MetricCard: React.FC<{
   subLabel: string;
   statusColor: string;
   statusText: string;
-  paperRef: string;
-}> = ({ icon, label, value, subLabel, statusColor, statusText, paperRef }) => (
+}> = ({ icon, label, value, subLabel, statusColor, statusText }) => (
   <motion.div
     initial={{ opacity: 0, y: 12 }}
     animate={{ opacity: 1, y: 0 }}
@@ -94,15 +93,6 @@ const MetricCard: React.FC<{
       {subLabel}
     </div>
 
-    <div style={{
-      fontSize: '10px',
-      color: 'var(--text-muted)',
-      borderTop: '1px solid var(--border-light)',
-      paddingTop: '8px',
-      fontStyle: 'italic',
-    }}>
-      {paperRef}
-    </div>
   </motion.div>
 );
 
@@ -134,9 +124,6 @@ const SecurityMetrics: React.FC<Props> = ({ metrics, qber, pHat }) => {
         <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
           Security Analysis
         </h3>
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-          Based on Guitouni et al. 2024 — IoT BB84 Security Metrics
-        </p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -150,7 +137,6 @@ const SecurityMetrics: React.FC<Props> = ({ metrics, qber, pHat }) => {
             subLabel={`Error rate in sifted key. p̂ ≈ ${pHat !== null ? pHat.toFixed(3) : '—'}`}
             statusColor={qberStatus.color}
             statusText={qberStatus.label}
-            paperRef="Eq. 1 — Avg. QBER 50.04% (pre-sifting). Post-sifting target < 5%."
           />
         )}
 
@@ -163,7 +149,6 @@ const SecurityMetrics: React.FC<Props> = ({ metrics, qber, pHat }) => {
             subLabel={`${metrics.key_length} key bits from ${metrics.bits_used} transmitted`}
             statusColor={effStatus.color}
             statusText={effStatus.label}
-            paperRef="Eq. 2 — Paper benchmark: avg 50.00%, range 48.62%–50.75%."
           />
         )}
 
@@ -176,7 +161,6 @@ const SecurityMetrics: React.FC<Props> = ({ metrics, qber, pHat }) => {
             subLabel="Shannon entropy of bit distribution [0.0 – 1.0]"
             statusColor={entropyStatus.color}
             statusText={entropyStatus.label}
-            paperRef="Paper benchmark: 0.93 (small keys) to 1.00 (large keys)."
           />
         )}
 
@@ -189,7 +173,6 @@ const SecurityMetrics: React.FC<Props> = ({ metrics, qber, pHat }) => {
             subLabel="Adjacent-bit Pearson correlation. Ideal: near 0"
             statusColor={corrStatus.color}
             statusText={corrStatus.label}
-            paperRef="Paper benchmark: avg −0.01 across 1000 keys (128-bit)."
           />
         )}
 
@@ -202,7 +185,6 @@ const SecurityMetrics: React.FC<Props> = ({ metrics, qber, pHat }) => {
             subLabel="Full QKD protocol round-trip time"
             statusColor="var(--text-muted)"
             statusText="Measured"
-            paperRef="Paper benchmark: 0.06 ms (min) to 0.22 ms (max) in IoT context."
           />
         )}
 

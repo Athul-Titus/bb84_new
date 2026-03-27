@@ -7,10 +7,11 @@ import BobPanel from './components/BobPanel';
 import LogTerminal from './components/LogTerminal';
 import ChatInterface from './components/ChatInterface';
 import ProjectOverview from './components/ProjectOverview';
+import ProtocolComparison from './components/ProtocolComparison';
 import { useProject } from './context/ProjectContext';
 import { User, Download, Activity, Key, MessageSquare, ShieldCheck, Home } from 'lucide-react';
 
-type Tab = 'overview' | 'dashboard' | 'lab' | 'chat';
+type Tab = 'overview' | 'dashboard' | 'lab' | 'chat' | 'comparison';
 
 const App: React.FC = () => {
     const { role, setRole, connected } = useProject();
@@ -21,7 +22,7 @@ const App: React.FC = () => {
             {/* ── Sidebar Navigation ── */}
             <aside className="sidebar">
                 <div className="sidebar-header">
-                    <h1>Ascone <span style={{ color: 'var(--text-muted)' }}>Secure</span></h1>
+                    <h1 style={{ marginLeft: '20px', fontSize: '32px', fontWeight: 800, letterSpacing: '-1px' }}>Q<span style={{ color: 'var(--text-muted)' }}>Safe</span></h1>
                 </div>
 
                 <nav className="nav-links">
@@ -85,7 +86,23 @@ const App: React.FC = () => {
                             className="tab-view overview-view"
                             style={{ padding: 0 }}
                         >
-                            <ProjectOverview onGetStarted={() => setActiveTab('dashboard')} />
+                            <ProjectOverview
+                                onGetStarted={() => setActiveTab('dashboard')}
+                                onCompare={() => setActiveTab('comparison')}
+                            />
+                        </motion.div>
+                    )}
+
+                    {activeTab === 'comparison' && (
+                        <motion.div
+                            key="comparison"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="tab-view comparison-view"
+                            style={{ padding: 0 }}
+                        >
+                            <ProtocolComparison onBack={() => setActiveTab('overview')} />
                         </motion.div>
                     )}
 

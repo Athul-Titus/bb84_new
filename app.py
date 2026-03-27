@@ -34,6 +34,45 @@ noise_config = {
     "attack_mode":         "none",  # "none" | "eavesdrop" | "mitm" | "dos"
 }
 
+# ---------------------------------------------------------------------------
+# Noise & Attack API Routes
+# ---------------------------------------------------------------------------
+
+@app.route('/api/set_noise_config', methods=['POST'])
+def update_noise_config():
+    data = request.json or {}
+    global noise_config
+    noise_config.update(data)
+    print(f"[Config] Updated noise_config: {data}")
+    return jsonify({"status": "success", "config": noise_config})
+
+@app.route('/api/set_attack_mode', methods=['POST'])
+def update_attack_mode():
+    data = request.json or {}
+    mode = data.get("mode", "none")
+    global noise_config
+    noise_config["attack_mode"] = mode
+    
+    # Auto-configure based on attack mode
+    if mode == "none":
+        noise_config["interception_density"] = 0.0
+        noise_config["network_noise_rate"]   = 0.0
+        noise_config["packet_loss_rate"]     = 0.0
+    elif mode == "eavesdrop":
+        noise_config["interception_density"] = 0.5  # 50% tap
+        noise_config["network_noise_rate"]   = 0.0
+        noise_config["packet_loss_rate"]     = 0.0
+    elif mode == "mitm":
+        noise_config["interception_density"] = 1.0  # full intercept
+        noise_config["network_noise_rate"]   = 0.2  # 20% classical flip
+        noise_config["packet_loss_rate"]     = 0.0
+    elif mode == "dos":
+        noise_config["interception_density"] = 0.0  # irrelevant because high loss
+        noise_config["network_noise_rate"]   = 0.5  # high channel noise 
+        noise_config["packet_loss_rate"]     = 0.4  # 40% loss
+        
+    print(f"[Attack Mode] Changed to '{mode}'. Config updated automatically.")
+    return jsonify({"status": "success", "config": noise_config})
 
 # ---------------------------------------------------------------------------
 # Helper utilities
@@ -1283,6 +1322,218 @@ def chat_receive():
         chat_messages.append(entry)
         print(f"[Bob] Received message from {entry.get('sender')}: {entry.get('encrypted_hex')}")
     return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# Recursive BB84 — Biased Basis Protocol
+# ---------------------------------------------------------------------------
+
+from recursive_session import RecursiveSession
+recursive_session = RecursiveSession()
+
+
+@app.route('/api/recursive/status', methods=['GET'])
+def recursive_status():
+    """Returns the current recursive session state."""
+    return jsonify(recursive_session.to_status_dict())
+
+
+@app.route('/api/recursive/plant_seed', methods=['POST'])
+def recursive_plant_seed():
+    """
+    Store the current alice.shared_key (or a provided key list) as K_0.
+    Called once after a successful standard 50/50 BB84 run.
+    """
+    data = request.json or {}
+    key_bits = data.get('key_bits')
+
+    # If no explicit key provided, fall back to alice's last shared key
+    if not key_bits:
+        key_bits = alice.shared_key
+
+    if not key_bits:
+        return jsonify({"error": "No key available. Run standard BB84 first."}), 400
+
+    key_list = [int(b) for b in key_bits]
+    recursive_session.plant_seed(key_list)
+
+    return jsonify({
+        "status":     "ok",
+        "round_num":  recursive_session.round_num,
+        "key_length": recursive_session.key_length,
+        "bias":       round(recursive_session.get_bias(), 4),
+    })
+
+
+@app.route('/api/recursive/send_message', methods=['POST'])
+def recursive_send_message():
+    """
+    Core Recursive BB84 route. Per-message lifecycle:
+      1. Derive bias from K_{n-1} and purge it from RAM
+      2. Run full biased BB84  →  K_n
+      3. XOR-encrypt message with K_n
+      4. Store K_n as the new seed (it enters RAM here)
+      5. Return full audit trail for the Activity Log
+    """
+    start_time = time.time()
+    data    = request.json or {}
+    message = data.get('message', '')
+    length  = int(data.get('length', 40))
+
+    if not message:
+        return jsonify({"error": "Message is required"}), 400
+
+    if not recursive_session.has_seed:
+        return jsonify({"error": "No seed key. Plant a seed from a completed BB84 run first."}), 400
+
+    round_num_before = recursive_session.round_num
+    bias_used        = recursive_session.get_bias()   # peek without purging yet
+
+    # ── Step 1: Derive bias, fetch seed, purge old key ───────────────────────
+    seed_bits = recursive_session.get_seed_and_purge()   # K_{n-1} leaves RAM here
+    # (seed_bits is a local variable; original list is zeroed inside RecursiveSession)
+
+    # ── Step 2: Generate biased BB84 key ─────────────────────────────────────
+    from randomkey import generate_biased_key
+    raw_bits, alice_bases, _, confirmed_bias = generate_biased_key(length, seed_bits)
+
+    # ── Step 3: Noise pipeline ────────────────────────────────────────────────
+    noisy_data = [{"bit": int(b), "basis": int(bs)} for b, bs in zip(raw_bits, alice_bases)]
+
+    if noise_config.get("interception_density", 0.0) > 0:
+        noisy_data = _apply_eve(noisy_data)
+
+    noisy_data, dropped = _apply_packet_loss(noisy_data, noise_config.get("packet_loss_rate", 0))
+    noisy_data, flips   = _apply_network_noise(noisy_data, noise_config.get("network_noise_rate", 0))
+
+    received_qubits = _build_circuits_from_qubit_data(noisy_data)
+    bob_bases, measured_bits = bob.measure_qubits(received_qubits, noise_config=noise_config)
+
+    # ── Step 4: Trim to matching length (packet loss) ─────────────────────────
+    min_len          = min(len(alice_bases), len(bob_bases))
+    alice_bases_t    = alice_bases[:min_len]
+    raw_bits_t       = raw_bits[:min_len]
+    bob_bases_t      = bob_bases[:min_len]
+    measured_bits_t  = measured_bits[:min_len]
+
+    # ── Step 5: Sifting ───────────────────────────────────────────────────────
+    sifted_alice = []
+    sifted_bob   = []
+    matches      = []
+    for i in range(min_len):
+        if alice_bases_t[i] == bob_bases_t[i]:
+            sifted_alice.append(int(raw_bits_t[i]))
+            sifted_bob.append(int(measured_bits_t[i]))
+            matches.append(i)
+
+    if not sifted_alice:
+        # Replant seed from seed_bits so user can retry
+        recursive_session.plant_seed(seed_bits)
+        return jsonify({"error": "Sifting yielded 0 bits. Try again or reduce packet loss."}), 400
+
+    # ── Step 6: QBER & Verification ───────────────────────────────────────────
+    sample_size  = max(1, min(len(sifted_bob) // 3, 8))
+    alice_sample = sifted_alice[:sample_size]
+    bob_sample   = sifted_bob[:sample_size]
+    errors       = sum(1 for a, b in zip(alice_sample, bob_sample) if a != b)
+    qber         = (errors / sample_size * 100) if sample_size > 0 else 0.0
+
+    qber_decimal = qber / 100.0
+    qber_sn_decimal = float(noise_config.get("qber_sn", 0.0)) / 100.0
+    p_hat = max(0.0, 4.0 * (qber_decimal - qber_sn_decimal))
+    
+    verified = (p_hat < 0.10) and (errors == 0)
+
+    if not verified:
+        # Restore the seed so the user can try sending again once channel is secure
+        recursive_session.plant_seed(seed_bits)
+        return jsonify({
+            "error": f"Security Alert! Eve detected. QBER: {qber:.1f}%, Est. Interception: {p_hat:.2f}. Message aborted."
+        }), 400
+
+    # ── Step 7: Finalize key K_n ──────────────────────────────────────────────
+    final_key = sifted_alice[sample_size:]
+    if not final_key:
+        final_key = sifted_alice   # fallback: very short key
+
+    key_str   = "".join(map(str, final_key))
+    key_metrics = compute_all_key_metrics(final_key, length)
+
+    # ── Step 8: Encrypt message with K_n ─────────────────────────────────────
+    msg_hex, msg_bits, key_used, enc_hex, enc_bits_str = _xor_encrypt(message, key_str)
+
+    # ── Step 9: Store K_n as the NEW seed (K_{n-1} already purged) ───────────
+    recursive_session.plant_seed(final_key)
+
+    execution_ms = round((time.time() - start_time) * 1000, 2)
+
+    # Build basis distribution summary for the activity log
+    total_bases = len(alice_bases)
+    ones_count  = sum(alice_bases)
+    basis_dist  = {
+        "total":     total_bases,
+        "diagonal":  ones_count,
+        "rect":      total_bases - ones_count,
+        "pct_diag":  round(ones_count / total_bases * 100, 1) if total_bases > 0 else 0,
+    }
+
+    # ── Step 10: Store message in chat feed ───────────────────────────────────
+    sender = data.get("sender", "alice")
+    chat_entry = {
+        "id":            str(uuid.uuid4()),
+        "sender":        sender,
+        "plaintext":     message,
+        "encrypted_hex": enc_hex,
+        "msg_bits":      msg_bits[:80] if msg_bits else "",
+        "key_used":      key_str[:40] if key_str else "",
+        "encrypted_bits": enc_bits_str[:80] if enc_bits_str else "",
+        "timestamp":     int(time.time()),
+    }
+    chat_messages.append(chat_entry)
+
+    # Push to connected peer (no plaintext over the wire)
+    peer_ip = noise_config.get("connected_peer_ip", "")
+    if peer_ip:
+        try:
+            import requests as req_lib
+            peer_entry = dict(chat_entry)
+            peer_entry["plaintext"] = ""
+            req_lib.post(f"http://{peer_ip}:5000/api/chat/receive", json=peer_entry, timeout=3)
+        except Exception:
+            pass
+
+    return jsonify({
+        # Protocol metadata
+        "round_num":      recursive_session.round_num,
+        "round_before":   round_num_before,
+        "bias_used":      round(bias_used, 4),
+        "confirmed_bias": round(confirmed_bias, 4),
+        # Raw BB84 data (for the Activity Log)
+        "raw_bits":       list(raw_bits),
+        "alice_bases":    list(alice_bases),
+        "bob_bases":      bob_bases,
+        "measured_bits":  measured_bits,
+        "sifted_length":  len(sifted_alice),
+        "matches":        matches,
+        "basis_dist":     basis_dist,
+        # Quality
+        "qber":           round(qber, 2),
+        "errors":         errors,
+        "sample_size":    sample_size,
+        "dropped":        dropped,
+        "flips":          flips,
+        # Key
+        "final_key":        final_key,
+        "final_key_length": len(final_key),
+        "key_metrics":    key_metrics,
+        # Encryption
+        "message":        message,
+        "encrypted_hex":  enc_hex,
+        "msg_bits":       msg_bits,
+        "encrypted_bits": enc_bits_str,
+        # Timing
+        "execution_ms":   execution_ms,
+    })
 
 
 if __name__ == '__main__':

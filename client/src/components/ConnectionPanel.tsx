@@ -135,32 +135,6 @@ const ConnectionPanel: React.FC = () => {
                     Quantum Hardware & Interception Configuration
                 </div>
                 
-                {/* Hardware Toggle */}
-                <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', fontSize: '14px', fontWeight: 500 }}>
-                    <input 
-                        type="checkbox" 
-                        checked={noiseConfig.use_hardware_noise || false}
-                        onChange={(e) => updateNoiseConfig({ use_hardware_noise: e.target.checked })}
-                        style={{ width: '18px', height: '18px', accentColor: 'var(--accent-primary)' }}
-                    />
-                    Enable Real Hardware Noise Modelling (IBM GenericBackendV2)
-                </label>
-                
-                {noiseConfig.use_hardware_noise && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)' }}>
-                            Baseline Noise Subtraction (QBER_SN %)
-                        </label>
-                        <input
-                            type="number"
-                            step="0.1"
-                            value={noiseConfig.qber_sn || 1.85}
-                            onChange={(e) => updateNoiseConfig({ qber_sn: parseFloat(e.target.value) })}
-                            style={{ width: '120px', padding: '8px 12px', border: '1px solid var(--border-light)', borderRadius: '6px' }}
-                        />
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Typical QBER_SN for 1024 qubits is ~1.85%</span>
-                    </div>
-                )}
 
                 {/* Eve Interception Slider */}
                 <div className="input-group" style={{ marginBottom: 0 }}>
@@ -194,8 +168,8 @@ const ConnectionPanel: React.FC = () => {
 };
 
 const AttackModeSelector: React.FC = () => {
-    const { addLog } = useProject();
-    const [mode, setMode] = useState<string>('none');
+    const { addLog, noiseConfig, setNoiseConfig } = useProject();
+    const mode = noiseConfig.attack_mode || 'none';
 
     const modes = [
         {
@@ -225,15 +199,24 @@ const AttackModeSelector: React.FC = () => {
     ];
 
     const handleSelect = async (newMode: string) => {
-        setMode(newMode);
-        await axios.post('/api/set_attack_mode', { mode: newMode });
+        // Optimistic UI update
+        setNoiseConfig({ ...noiseConfig, attack_mode: newMode });
+        try {
+            const res = await axios.post('/api/set_attack_mode', { mode: newMode });
+            if (res.data?.config) {
+                // Sync the auto-configured values (e.g., slider jumping to 0.5 for eavesdrop)
+                setNoiseConfig(res.data.config);
+            }
+        } catch (e) {
+            console.error(e);
+        }
         addLog('info', `[Attack Mode] Set to: ${newMode}`);
     };
 
     return (
         <div style={{ marginTop: '8px' }}>
             <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
-                Attack Simulation (IoT Paper §4.1)
+                Attack Simulation
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '8px' }}>
                 {modes.map(m => (
