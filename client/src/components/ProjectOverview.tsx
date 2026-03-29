@@ -78,7 +78,9 @@ const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted, onCompa
         </h1>
         <p style={{ fontSize: '18px', color: 'var(--text-secondary)', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>
           QSafe is an advanced end-to-end simulation of the <strong style={{ color: 'var(--text-primary)'}}>BB84 Protocol</strong>. 
-          Harness the foundational laws of quantum mechanics to establish mathematically unbreakable cryptographic keys across untrusted networks.
+          Harness the foundational laws of quantum mechanics to establish mathematically unbreakable cryptographic keys across untrusted networks, with
+          <strong style={{ color: 'var(--text-primary)'}}> Cascade error detection/correction</strong> and
+          <strong style={{ color: 'var(--text-primary)'}}> Privacy Amplification</strong> for final key hardening.
         </p>
       </motion.div>
 
@@ -112,10 +114,11 @@ const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted, onCompa
           <div style={iconWrapperStyle}>
             <Zap size={24} style={{ color: 'var(--green-success)' }} />
           </div>
-          <h3 style={cardTitleStyle}>3. Measurement & Sifting</h3>
+          <h3 style={cardTitleStyle}>3. Measurement, Sifting & Hardening</h3>
           <p style={cardTextStyle}>
             <strong>Bob</strong> measures the incoming photons using a randomly guessed sequence of bases. 
-            Alice and Bob then communicate over a classical public channel to sift out mismatched bases to form a <strong>Shared Key</strong>.
+            Alice and Bob then communicate over a classical public channel to sift out mismatched bases, run <strong>Cascade</strong> for error detection/correction,
+            and apply <strong>Privacy Amplification</strong> to derive a hardened <strong>Shared Key</strong>.
           </p>
         </motion.div>
 
