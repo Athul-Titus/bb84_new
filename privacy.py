@@ -23,18 +23,38 @@ def amplify(corrected_key, leaked_bits, qber, sigma=16, alpha=0.1):
     """
     n = len(corrected_key)
     
-    # Check minimum length guard
+    # Check minimum length guard. For demo/interactive flows, keep the corrected
+    # key instead of hard-failing so reconciliation results remain visible.
     if n < 16:
-        return None, {"error": "Key too short for Privacy Amplification (min 16 bits)"}
+        return list(corrected_key), {
+            "warning": "Key too short for secure amplification (min 16 bits). Using corrected key without compression.",
+            "input_length": n,
+            "entropy_loss": 0,
+            "parity_leakage": leaked_bits,
+            "security_margin": sigma,
+            "final_length": n,
+            "compression_ratio": 100.0 if n > 0 else 0,
+            "amplification_applied": False,
+        }
 
     # Calculate target length m using a refined Holevo Bound approach
     # Formula: m = n * (1 - (1 + alpha) * H2(QBER)) - leaked_bits - sigma
     h2 = binary_entropy(qber)
     m = int(n * (1 - (1 + float(alpha)) * h2) - leaked_bits - sigma)
 
-    # Check security threshold guard
-    if m <= 0:
-        return None, {"error": "Security Threshold Breached: Information leakage exceeds key length."}
+    # Soft guard for short compressed outputs: preserve usability and report warning.
+    if m < 8:
+        return list(corrected_key), {
+            "warning": "Key too short for secure amplification. Keeping corrected key length.",
+            "input_length": n,
+            "entropy_loss": round(n * h2, 2),
+            "parity_leakage": leaked_bits,
+            "security_margin": sigma,
+            "final_length": n,
+            "compression_ratio": 100.0,
+            "amplification_applied": False,
+            "target_length_estimate": m,
+        }
 
     # Toeplitz Matrix Construction
     # We need n + m - 1 bits to define the matrix.
@@ -63,7 +83,8 @@ def amplify(corrected_key, leaked_bits, qber, sigma=16, alpha=0.1):
         "parity_leakage": leaked_bits,
         "security_margin": sigma,
         "final_length": m,
-        "compression_ratio": round((m / n) * 100, 1) if n > 0 else 0
+        "compression_ratio": round((m / n) * 100, 1) if n > 0 else 0,
+        "amplification_applied": True,
     }
 
     return final_key, stats

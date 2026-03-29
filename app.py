@@ -641,31 +641,19 @@ def compare_sample():
 
         corrected_bob_key = list(bob_remaining_key)
 
-        if qber_decimal > 0:
-            print(f"[Cascade] QBER is {qber:.2f}%, running error correction...")
-            try:
-                cascade_result = run_cascade_with_trace(alice_remaining, bob_remaining_key, qber_decimal)
-                corrected_bob_key = cascade_result['corrected_key']
-                cascade_stats = cascade_result['stats']
-                cascade_trace = cascade_result.get('trace')
-                print(f"[Cascade] Correction complete. Found {cascade_stats.get('errors_found', 0)} errors.")
-            except Exception as e:
-                print(f"[Cascade ERROR] {e}")
-                verified = False
-                status = "aborted"
-                abort_reason = f"cascade_error: {str(e)}"
-                abort_classification = "software_error"
-
-        if qber_decimal == 0:
-            cascade_stats = {
-                "errors_found": 0,
-                "rounds_run": 0,
-                "parities_exchanged": 0,
-                "converged": True,
-                "iterations_used": 0,
-                "max_iterations": 0,
-                "residual_errors": 0,
-            }
+        print(f"[Cascade] QBER is {qber:.2f}%, running error correction...")
+        try:
+            cascade_result = run_cascade_with_trace(alice_remaining, bob_remaining_key, qber_decimal)
+            corrected_bob_key = cascade_result['corrected_key']
+            cascade_stats = cascade_result['stats']
+            cascade_trace = cascade_result.get('trace')
+            print(f"[Cascade] Correction complete. Found {cascade_stats.get('errors_found', 0)} errors.")
+        except Exception as e:
+            print(f"[Cascade ERROR] {e}")
+            verified = False
+            status = "aborted"
+            abort_reason = f"cascade_error: {str(e)}"
+            abort_classification = "software_error"
 
         if verified and corrected_bob_key is not None:
             residual_errors = sum(1 for a, b in zip(alice_remaining, corrected_bob_key) if a != b)
@@ -686,14 +674,25 @@ def compare_sample():
             leaked_bits = int(cascade_stats.get("parities_exchanged", 0)) if cascade_stats else 0
             final_key, pa_stats = amplify(corrected_bob_key, leaked_bits=leaked_bits, qber=qber_decimal)
             if final_key is None:
-                verified = False
-                status = "aborted"
-                abort_reason = f"privacy_amplification_failed: {pa_stats.get('error', 'unknown')}"
-                abort_classification = "software_error"
+                # Environmental/manual-noise workflows should remain interactive even
+                # when privacy amplification cannot safely compress this round.
+                if tolerance_override_active:
+                    pa_stats = pa_stats or {}
+                    pa_stats["warning"] = pa_stats.get("error", "Privacy amplification skipped in tolerance mode.")
+                    final_key = list(corrected_bob_key)
+                    print("[PA] Tolerance mode active. Using corrected key without abort.")
+                else:
+                    verified = False
+                    status = "aborted"
+                    abort_reason = f"privacy_amplification_failed: {pa_stats.get('error', 'unknown')}"
+                    abort_classification = "software_error"
             else:
                 corrected_bob_key = final_key
                 alice_remaining = final_key
                 alice.pa_stats = pa_stats
+
+            if verified and pa_stats and pa_stats.get("warning"):
+                print(f"[PA WARNING] {pa_stats.get('warning')}")
 
         if verified and corrected_bob_key is not None:
             alice.shared_key = corrected_bob_key
@@ -786,6 +785,7 @@ def compare_sample():
         "raw_remaining_key": raw_remaining_key,
         "residual_errors": residual_errors,
         "pa_stats": pa_stats,
+        "pa_warning": pa_stats.get("warning") if isinstance(pa_stats, dict) else None,
         "efficiency_tags": {
             "bits_recovered": bits_recovered,
             "bits_discarded_sampling": len(sample_indices_sorted),

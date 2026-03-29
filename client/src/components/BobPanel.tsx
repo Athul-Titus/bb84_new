@@ -238,6 +238,7 @@ const BobPanel: React.FC = () => {
                 cascade_stats,
                 cascade_trace,
                 pa_stats,
+                pa_warning,
                 efficiency_tags,
             } = res.data;
             if (typeof newQber === 'number') setQber(newQber);
@@ -317,6 +318,10 @@ const BobPanel: React.FC = () => {
             const finalBobKey = corrected_bob_key || remainingKey;
             setPaStats(pa_stats || null);
             setEfficiencyTags(efficiency_tags || null);
+            if (pa_warning) {
+                addLog('warning', `[Privacy Amplification] ${pa_warning}`);
+                setEnvironmentalNoiseNotice(pa_warning);
+            }
             setBobRemainingKey(Array.isArray(raw_remaining_key) ? raw_remaining_key : []);
             setCascadeReport(cascade_stats ? { stats: cascade_stats, trace: cascade_trace } : null);
             setCascadeData(cascade_stats ? { stats: cascade_stats, trace: cascade_trace } : null);
