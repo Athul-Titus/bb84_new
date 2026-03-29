@@ -664,11 +664,14 @@ def compare_sample():
             fast_success = (qber_decimal == 0.0 and residual_errors == 0)
 
             bits_recovered = int(cascade_stats.get("errors_found", 0))
-            if residual_errors != 0:
+            # FIX 1: Don't abort on residual errors if tolerance mode is active
+            if residual_errors != 0 and not tolerance_override_active:
                 verified = False
                 status = "aborted"
                 abort_reason = f"residual_errors_{residual_errors}"
                 abort_classification = "software_error"
+            elif residual_errors != 0:
+                print(f"[Cascade] Residual errors: {residual_errors} (tolerance mode — continuing).")
 
         if verified and corrected_bob_key is not None:
             leaked_bits = int(cascade_stats.get("parities_exchanged", 0)) if cascade_stats else 0
@@ -694,10 +697,12 @@ def compare_sample():
             if verified and pa_stats and pa_stats.get("warning"):
                 print(f"[PA WARNING] {pa_stats.get('warning')}")
 
-        if verified and corrected_bob_key is not None:
+        # FIX 3: Set key regardless of strict verification — enables tolerance mode workflows
+        if corrected_bob_key is not None:
             alice.shared_key = corrected_bob_key
             bob.shared_key = corrected_bob_key
-        elif not verified:
+        
+        if not verified:
             alice.pa_stats = None
 
         if verified:

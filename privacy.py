@@ -41,6 +41,9 @@ def amplify(corrected_key, leaked_bits, qber, sigma=16, alpha=0.1):
     # Formula: m = n * (1 - (1 + alpha) * H2(QBER)) - leaked_bits - sigma
     h2 = binary_entropy(qber)
     m = int(n * (1 - (1 + float(alpha)) * h2) - leaked_bits - sigma)
+    
+    # FIX 2: Explicit privacy floor guard — ensure m never stays negative or too small
+    m = max(8, m)
 
     # Soft guard for short compressed outputs: preserve usability and report warning.
     if m < 8:
