@@ -20,6 +20,12 @@
     --red-error-bg: #ffebe9;
     --orange-warning: #bf6a02;
     --orange-warning-bg: #fff8c5;
+    
+    /* Missing variables used in components */
+    --blue-link: #0A84FF;
+    --blue-link-soft: rgba(10, 132, 255, 0.15);
+    --purple-info: #AF52DE;
+    --purple-info-soft: rgba(175, 82, 222, 0.15);
 
     --text-primary: #111814;
     --text-secondary: #55605b;

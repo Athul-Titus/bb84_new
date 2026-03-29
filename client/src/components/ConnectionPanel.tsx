@@ -5,7 +5,13 @@ import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
 
 const ConnectionPanel: React.FC = () => {
-    const { localIP, peerIP, setPeerIP, connected, setConnected, addLog, noiseConfig, setNoiseConfig } = useProject();
+    const {
+        localIP, peerIP, setPeerIP, connected, setConnected,
+        addLog, noiseConfig, setNoiseConfig,
+        manualNoiseEnabled, setManualNoiseEnabled,
+        manualNoiseRate, setManualNoiseRate,
+        noiseToleranceEnabled, setNoiseToleranceEnabled,
+    } = useProject();
     const [ipInput, setIpInput] = useState(peerIP);
     const [copied, setCopied] = useState(false);
 
@@ -16,6 +22,23 @@ const ConnectionPanel: React.FC = () => {
         try {
             await axios.post('/api/set_noise_config', updated);
         } catch (e) { }
+    };
+
+    const applyManualNoiseMode = async (enabled: boolean) => {
+        setManualNoiseEnabled(enabled);
+        if (!enabled) {
+            setNoiseToleranceEnabled(false);
+        }
+        if (enabled) {
+            addLog('info', '[Manual Noise] Enabled. Backend channel/eve noise is temporarily disabled for clean post-sift injection.');
+            await updateNoiseConfig({
+                interception_density: 0,
+                channel_noise_rate: 0,
+                network_noise_rate: 0,
+            });
+            return;
+        }
+        addLog('info', '[Manual Noise] Disabled. Backend noise controls can be used normally.');
     };
 
     const handleCopy = () => {
@@ -157,6 +180,55 @@ const ConnectionPanel: React.FC = () => {
                         <span>0.0 (Secure Channel)</span>
                         <span>0.5 (Partial Tap)</span>
                         <span>1.0 (Full Intercept)</span>
+                    </div>
+                </div>
+
+                <div className="input-group" style={{ marginBottom: 0, borderTop: '1px solid var(--border-light)', paddingTop: '16px', marginTop: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <label>Simulate Channel Noise (Post-Sifting)</label>
+                        <button
+                            className="btn btn-secondary"
+                            onClick={() => applyManualNoiseMode(!manualNoiseEnabled)}
+                            style={{ fontSize: 12, padding: '0 12px', height: 30 }}
+                        >
+                            {manualNoiseEnabled ? 'Disable' : 'Enable'}
+                        </button>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Error Rate</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent-primary)' }}>
+                            {(manualNoiseRate * 100).toFixed(0)}%
+                        </span>
+                    </div>
+                    <input
+                        type="range"
+                        min="0.03"
+                        max="0.05"
+                        step="0.01"
+                        value={manualNoiseRate}
+                        onChange={(e) => setManualNoiseRate(parseFloat(e.target.value))}
+                        disabled={!manualNoiseEnabled}
+                        style={{ width: '100%', accentColor: '#ea580c', opacity: manualNoiseEnabled ? 1 : 0.45 }}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                        Injected after sifting and before Cascade visualization.
+                    </div>
+                    <div style={{ marginTop: 12, borderTop: '1px dashed var(--border-light)', paddingTop: 10 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>Noise-Tolerance</span>
+                            <button
+                                className="btn btn-secondary"
+                                onClick={() => setNoiseToleranceEnabled(!noiseToleranceEnabled)}
+                                disabled={!manualNoiseEnabled}
+                                style={{ fontSize: 12, padding: '0 12px', height: 28, opacity: manualNoiseEnabled ? 1 : 0.5 }}
+                            >
+                                {noiseToleranceEnabled ? 'Enabled' : 'Disabled'}
+                            </button>
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            Allows verification to continue to Cascade when QBER is raised by the manual post-sift noise injector.
+                        </div>
                     </div>
                 </div>
             </div>

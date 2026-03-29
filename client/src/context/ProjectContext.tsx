@@ -56,6 +56,40 @@ interface ProjectContextType {
     noiseConfig: any;
     setNoiseConfig: (config: any) => void;
 
+    // Cascade Results
+    cascadeData: any;
+    setCascadeData: (data: any) => void;
+    bobRemainingKey: number[];
+    setBobRemainingKey: (key: number[]) => void;
+    cascadeSkippedReason: string | null;
+    setCascadeSkippedReason: (reason: string | null) => void;
+    paStats: any | null;
+    setPaStats: (stats: any | null) => void;
+
+    basisSyncLevel: number | null;
+    setBasisSyncLevel: (v: number | null) => void;
+    biasAlignmentScore: number | null;
+    setBiasAlignmentScore: (v: number | null) => void;
+    bitsDiscarded: number;
+    setBitsDiscarded: (v: number) => void;
+    efficiencyTags: any | null;
+    setEfficiencyTags: (v: any | null) => void;
+
+    manualNoiseEnabled: boolean;
+    setManualNoiseEnabled: (v: boolean) => void;
+    manualNoiseRate: number;
+    setManualNoiseRate: (v: number) => void;
+    noiseToleranceEnabled: boolean;
+    setNoiseToleranceEnabled: (v: boolean) => void;
+    bobSiftedCleanKey: number[];
+    setBobSiftedCleanKey: (v: number[]) => void;
+    bobSiftedNoisyKey: number[];
+    setBobSiftedNoisyKey: (v: number[]) => void;
+    aliceSiftedForViz: number[];
+    setAliceSiftedForViz: (v: number[]) => void;
+    noiseInjectionReport: any | null;
+    setNoiseInjectionReport: (v: any | null) => void;
+
     resetState: () => void;
 }
 
@@ -92,6 +126,21 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const [sharedKey, setSharedKey] = useState<number[]>([]);
     const [keyMetrics, setKeyMetrics] = useState<any>(null);
     const [noiseConfig, setNoiseConfig] = useState<any>({ eve_active: false });
+    const [cascadeData, setCascadeData] = useState<any>(null);
+    const [bobRemainingKey, setBobRemainingKey] = useState<number[]>([]);
+    const [cascadeSkippedReason, setCascadeSkippedReason] = useState<string | null>(null);
+    const [paStats, setPaStats] = useState<any>(null);
+    const [basisSyncLevel, setBasisSyncLevel] = useState<number | null>(null);
+    const [biasAlignmentScore, setBiasAlignmentScore] = useState<number | null>(null);
+    const [bitsDiscarded, setBitsDiscarded] = useState<number>(0);
+    const [efficiencyTags, setEfficiencyTags] = useState<any | null>(null);
+    const [manualNoiseEnabled, setManualNoiseEnabled] = useState<boolean>(false);
+    const [manualNoiseRate, setManualNoiseRate] = useState<number>(0.03);
+    const [noiseToleranceEnabled, setNoiseToleranceEnabled] = useState<boolean>(false);
+    const [bobSiftedCleanKey, setBobSiftedCleanKey] = useState<number[]>([]);
+    const [bobSiftedNoisyKey, setBobSiftedNoisyKey] = useState<number[]>([]);
+    const [aliceSiftedForViz, setAliceSiftedForViz] = useState<number[]>([]);
+    const [noiseInjectionReport, setNoiseInjectionReport] = useState<any | null>(null);
 
     const pollRef = useRef<any>(null);
 
@@ -161,6 +210,21 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setEfficiency(0);
         setNoiseStats(null);
         setKeyMetrics(null);
+        setCascadeData(null);
+        setBobRemainingKey([]);
+        setCascadeSkippedReason(null);
+        setPaStats(null);
+        setBasisSyncLevel(null);
+        setBiasAlignmentScore(null);
+        setBitsDiscarded(0);
+        setEfficiencyTags(null);
+        setManualNoiseEnabled(false);
+        setManualNoiseRate(0.03);
+        setNoiseToleranceEnabled(false);
+        setBobSiftedCleanKey([]);
+        setBobSiftedNoisyKey([]);
+        setAliceSiftedForViz([]);
+        setNoiseInjectionReport(null);
         addLog('info', 'State reset.');
         axios.post('/api/chat/clear').catch(() => {});
     };
@@ -182,6 +246,21 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         noiseStats, setNoiseStats,
         keyMetrics, setKeyMetrics,
         noiseConfig, setNoiseConfig,
+        cascadeData, setCascadeData,
+        bobRemainingKey, setBobRemainingKey,
+        cascadeSkippedReason, setCascadeSkippedReason,
+        paStats, setPaStats,
+        basisSyncLevel, setBasisSyncLevel,
+        biasAlignmentScore, setBiasAlignmentScore,
+        bitsDiscarded, setBitsDiscarded,
+        efficiencyTags, setEfficiencyTags,
+        manualNoiseEnabled, setManualNoiseEnabled,
+        manualNoiseRate, setManualNoiseRate,
+        noiseToleranceEnabled, setNoiseToleranceEnabled,
+        bobSiftedCleanKey, setBobSiftedCleanKey,
+        bobSiftedNoisyKey, setBobSiftedNoisyKey,
+        aliceSiftedForViz, setAliceSiftedForViz,
+        noiseInjectionReport, setNoiseInjectionReport,
         resetState
     };
 

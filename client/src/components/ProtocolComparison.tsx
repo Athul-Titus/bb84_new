@@ -1,12 +1,21 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Zap, ShieldAlert, Cpu } from 'lucide-react';
+import { useProject } from '../context/ProjectContext';
 
 interface ProtocolComparisonProps {
   onBack: () => void;
 }
 
 const ProtocolComparison: React.FC<ProtocolComparisonProps> = ({ onBack }) => {
+  const { basisSyncLevel, biasAlignmentScore, efficiencyTags, paStats } = useProject();
+  const measuredSifting = typeof basisSyncLevel === 'number' ? Math.max(0, Math.min(100, basisSyncLevel)) : 50;
+  const measuredEntropy = typeof efficiencyTags?.final_secret_entropy === 'number'
+    ? efficiencyTags.final_secret_entropy
+    : paStats?.final_length
+      ? 1
+      : 0;
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -46,7 +55,7 @@ const ProtocolComparison: React.FC<ProtocolComparisonProps> = ({ onBack }) => {
           Recursive vs Standard BB84
         </h1>
         <p style={{ fontSize: '18px', color: 'var(--text-secondary)', maxWidth: '800px', lineHeight: 1.6 }}>
-          Discover how our novel <strong>Recursive BB84</strong> extension shatters the classical efficiency limits of Quantum Key Distribution without compromising the unconditional security guaranteed by the laws of physics.
+          Measured simulation results show how <strong>Recursive BB84</strong> can improve throughput under tested conditions while still aborting unsafe sessions when security thresholds are breached.
         </p>
       </div>
 
@@ -97,7 +106,7 @@ const ProtocolComparison: React.FC<ProtocolComparisonProps> = ({ onBack }) => {
             <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '8px', textTransform: 'uppercase' }}>
               Peak Sifting Efficiency
             </div>
-            <ProgressBar value={90} color="var(--green-success)" label="Up to ~90%" highlight={true} />
+            <ProgressBar value={measuredSifting} color="var(--green-success)" label={`${measuredSifting.toFixed(1)}% measured`} highlight={true} />
           </div>
         </div>
 
@@ -116,23 +125,23 @@ const ProtocolComparison: React.FC<ProtocolComparisonProps> = ({ onBack }) => {
             title="Sifting Yield (Usable Bits)"
             desc="Percentage of sent qubits that survive the basis-matching phase."
             col1={{ label: "Standard BB84", value: 50, color: "var(--text-muted)", text: "50%" }}
-            col2={{ label: "Recursive BB84", value: 85, color: "var(--green-success)", text: "85%+" }}
+            col2={{ label: "Recursive BB84", value: measuredSifting, color: "var(--green-success)", text: `${measuredSifting.toFixed(1)}%` }}
           />
 
           {/* Metric 2 */}
           <MetricRow 
-            title="Authentication Overhead"
-            desc="Need for separate classical authentication keys per message."
+            title="Basis Synchronization Level (DBS)"
+            desc="Combined evidence: sift synchronization and basis-bias alignment across runs."
             col1={{ label: "Standard BB84", value: 100, color: "var(--red-danger)", text: "High (Required)" }}
-            col2={{ label: "Recursive BB84", value: 20, color: "var(--green-success)", text: "Low (Self-Seeding)" }}
+            col2={{ label: "Recursive BB84", value: Math.max(0, Math.min(100, biasAlignmentScore ?? measuredSifting)), color: "var(--green-success)", text: `${(biasAlignmentScore ?? measuredSifting).toFixed(1)}% align` }}
           />
 
           {/* Metric 3 */}
           <MetricRow 
-            title="Eavesdropper Intercept Difficulty"
-            desc="Eve's ability to guess the correct basis without triggering QBER alarms."
-            col1={{ label: "Standard BB84", value: 50, color: "var(--text-muted)", text: "50% chance" }}
-            col2={{ label: "Recursive BB84", value: 10, color: "var(--accent-blue)", text: "Dynamic (Unknown bias)" }}
+            title="Final Secret Entropy"
+            desc="Entropy on the final post-reconciliation, post-amplification key material."
+            col1={{ label: "Standard BB84", value: 93, color: "var(--text-muted)", text: "~0.93" }}
+            col2={{ label: "Recursive BB84", value: Math.max(0, Math.min(100, measuredEntropy * 100)), color: "var(--accent-blue)", text: measuredEntropy.toFixed(3) }}
           />
         </div>
       </div>

@@ -62,9 +62,31 @@ def build_noisy_simulator(use_hardware_noise: bool = False,
         Simulator with the requested noise model attached.
     """
     if use_hardware_noise:
-        # Load a generic IBM quantum hardware topology (e.g., 65 qubits, similar to Brooklyn)
-        backend = GenericBackendV2(num_qubits=65)
-        return AerSimulator.from_backend(backend)
+        # Reduced from 65 qubits to 5 for faster transpilation in demo mode
+        backend = GenericBackendV2(num_qubits=5)
+        
+        # Load the hardware baseline (thermal/gate/readout noise)
+        noise_model = NoiseModel.from_backend(backend)
+        
+        # Extract topology and physical constraints for AerSimulator alignment
+        cm = backend.coupling_map
+        bg = backend.operation_names
+        
+        # User's recommended high-fidelity noise mapping
+        # This ensures all bases (Rectilinear and Diagonal) are noisy.
+        if depolar_rate > 0.0:
+            error_1q = depolarizing_error(depolar_rate, 1)
+            # Apply to 'measure' to catch rectilinear/passive qubits
+            noise_model.add_all_qubit_quantum_error(error_1q, "measure")
+            # Apply to standard basis transformation and identity gates
+            noise_model.add_all_qubit_quantum_error(error_1q, ["sx", "rz", "h", "x", "id"])
+            
+            # 2-qubit gate noise
+            if 'cx' in bg:
+                error_2q = depolarizing_error(depolar_rate, 2)
+                noise_model.add_all_qubit_quantum_error(error_2q, 'cx')
+            
+        return AerSimulator(noise_model=noise_model, coupling_map=cm, basis_gates=bg)
 
     # Fast ideal execution if no custom noise specified
     if depolar_rate == 0.0 and t1_us == 0.0:

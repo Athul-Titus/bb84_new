@@ -21,9 +21,25 @@ sample_data = res.json()
 print("Sample:", sample_data)
 
 print("Comparing sample...")
-res = requests.post("http://127.0.0.1:5000/api/compare_sample", json={"sampleIndices": sample_data["sampleIndices"], "bobSampleBits": sample_data["sampleBits"], "originalMatches": sift_data["matches"]})
+res = requests.post("http://127.0.0.1:5000/api/compare_sample", json={
+	"sampleIndices": sample_data["sampleIndices"],
+	"bobSampleBits": sample_data["sampleBits"],
+	"bobRemainingKey": sample_data["remainingKey"],
+	"originalMatches": sift_data["matches"]
+})
 compare_data = res.json()
 print("Compare:", compare_data)
+
+if compare_data.get("status") not in ("success", "aborted"):
+	raise AssertionError("Missing structured status in compare_sample response")
+
+if "math" not in compare_data:
+	raise AssertionError("Missing math payload in compare_sample response")
+
+math_payload = compare_data["math"]
+for key in ("h2_qber", "secret_key_rate_r", "qber_decimal"):
+	if key not in math_payload:
+		raise AssertionError(f"Missing math field: {key}")
 
 print("Fetching Alice Key...")
 res = requests.get("http://127.0.0.1:5000/api/alice/key_status")

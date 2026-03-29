@@ -42,8 +42,18 @@ if resp.status_code != 200:
     
 verify_data = resp.json()
 bob_final_key = verify_data.get('remainingKey')
-print(f"✅ Bob Verification Success. QBER: {verify_data.get('qber')}%")
+print(f"✅ Bob Verification Response. status={verify_data.get('status')} QBER={verify_data.get('qber')}%")
 print(f"Bob Final Key: {bob_final_key}")
+
+if verify_data.get("status") != "success" or not verify_data.get("verified"):
+    print("❌ Expected verification success for clean test profile.")
+    exit(1)
+
+cascade_stats = verify_data.get("cascade_stats") or {}
+residual = cascade_stats.get("residual_errors", verify_data.get("residual_errors"))
+if residual not in (0, None):
+    print(f"❌ Residual errors detected after Cascade: {residual}")
+    exit(1)
 
 # 4. Check Alice's Status (Did she get the key?)
 print("\n4. Checking Alice's Key Status...")
@@ -63,6 +73,8 @@ print(f"Alice Final Key: {alice_final_key}")
 if alice_final_key == bob_final_key:
     print("\n✅ SUCCESS: Alice and Bob have identical final keys.")
     print(f"Key Length: {len(alice_final_key)}")
+    if alice_status.get("paStats"):
+        print(f"PA Final Length: {alice_status['paStats'].get('final_length')}")
 else:
     print("\n❌ FAILURE: Keys do not match!")
     print(f"Alice: {alice_final_key}")

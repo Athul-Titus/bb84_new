@@ -11,6 +11,8 @@ class Alice(Node):
         self.bases = None
         self.encoded_qubits = None
         self.shared_key = None
+        self.sifted_key = None
+        self.pa_stats = None
 
     def prepare_quantum_states(self, length):
         self.log(f"Generating {length} bits (Standard BB84)...")

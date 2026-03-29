@@ -1,34 +1,43 @@
-// @ts-nocheck
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useProject } from '../context/ProjectContext';
 import { Radio, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
+import KeyLifecycleFunnel from './KeyLifecycleFunnel';
 
 const AlicePanel: React.FC = () => {
     const {
-        connected,
         addLog,
         aliceBits,
         aliceBases,
         setAliceState,
         sharedKey,
-        setSharedKey
+        setSharedKey,
+        setPaStats,
+        paStats,
+        basisSyncLevel,
+        biasAlignmentScore,
+        bitsDiscarded,
+        efficiencyTags
     } = useProject();
 
     const [length, setLength] = useState(10);
     const [loading, setLoading] = useState(false);
+    const [siftedLen, setSiftedLen] = useState(0);
 
     // Poll for key status if we have generated bits but no key yet
     React.useEffect(() => {
-        let interval: NodeJS.Timeout;
+        let interval: any;
         if (aliceBits.length > 0 && sharedKey.length === 0) {
             interval = setInterval(async () => {
                 try {
                     const res = await axios.get('/api/alice/key_status');
                     if (res.data.sharedKey) {
                         setSharedKey(res.data.sharedKey);
-                        addLog('success', `Key Established with Bob! Length: ${res.data.sharedKey.length}`);
+                        setSiftedLen(res.data.siftedKeyLength || 0);
+                        if (res.data.paStats) setPaStats(res.data.paStats);
+                        
+                        addLog('success', `Key Established with Bob! Final Length: ${res.data.sharedKey.length} bits.`);
                         clearInterval(interval);
                     }
                 } catch (e) {
@@ -37,7 +46,7 @@ const AlicePanel: React.FC = () => {
             }, 2000);
         }
         return () => clearInterval(interval);
-    }, [aliceBits, sharedKey, setSharedKey, addLog]);
+    }, [aliceBits, sharedKey, setSharedKey, addLog, setPaStats]);
 
     const handleGenerate = async () => {
         setLoading(true);
@@ -47,6 +56,8 @@ const AlicePanel: React.FC = () => {
 
             const { aliceBits, aliceBases } = res.data;
             setAliceState(aliceBits, aliceBases);
+            setSiftedLen(0);
+            setPaStats(null);
             addLog('success', 'Qubits prepared and sent to Quantum Channel.');
         } catch (err: any) {
             addLog('error', err.message || 'Generation failed');
@@ -67,7 +78,7 @@ const AlicePanel: React.FC = () => {
                     <input
                         type="number"
                         min="5"
-                        max="50"
+                        max="500"
                         value={length}
                         onChange={(e) => setLength(parseInt(e.target.value))}
                     />
@@ -121,35 +132,51 @@ const AlicePanel: React.FC = () => {
             )}
 
             {sharedKey.length > 0 && (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    style={{
-                        marginTop: '32px',
-                        padding: '24px',
-                        borderRadius: 'var(--radius-md)',
-                        background: 'var(--green-success-bg)',
-                        border: '1px solid rgba(26, 127, 55, 0.1)'
-                    }}
-                >
-                    <div className="display-font" style={{ color: 'var(--green-success)', fontWeight: 600, fontSize: '18px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        ✅ Secure Shared Key Established
-                    </div>
-                    <div className="visual-grid">
-                        {sharedKey.map((b, i) => (
-                            <motion.div
-                                key={i}
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                transition={{ delay: i * 0.02 }}
-                                className={`box bit-${b}`}
-                                style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
-                            >
-                                {b}
-                            </motion.div>
-                        ))}
-                    </div>
-                </motion.div>
+                <>
+                    <KeyLifecycleFunnel 
+                        raw={aliceBits.length}
+                        sifted={siftedLen || (paStats?.input_length) || (sharedKey.length * 2)} // Heuristic fallback if not polled yet
+                        corrected={paStats?.input_length || sharedKey.length}
+                        final={sharedKey.length}
+                        bitsDiscardedSifting={bitsDiscarded}
+                        bitsDiscardedSampling={efficiencyTags?.bits_discarded_sampling || 0}
+                        bitsDiscardedPrivacy={efficiencyTags?.bits_discarded_privacy || 0}
+                        bitsRecovered={efficiencyTags?.bits_recovered || 0}
+                        basisSyncLevel={basisSyncLevel}
+                        biasAlignmentScore={biasAlignmentScore}
+                        finalSecretEntropy={efficiencyTags?.final_secret_entropy}
+                    />
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        style={{
+                            marginTop: '32px',
+                            padding: '24px',
+                            borderRadius: 'var(--radius-md)',
+                            background: 'var(--green-success-bg)',
+                            border: '1px solid rgba(26, 127, 55, 0.1)'
+                        }}
+                    >
+                        <div className="display-font" style={{ color: 'var(--green-success)', fontWeight: 600, fontSize: '18px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            ✅ Secure Shared Key Established
+                        </div>
+                        <div className="visual-grid">
+                            {sharedKey.map((b, i) => (
+                                <motion.div
+                                    key={i}
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    transition={{ delay: i * 0.02 }}
+                                    className={`box bit-${b}`}
+                                    style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}
+                                >
+                                    {b}
+                                </motion.div>
+                            ))}
+                        </div>
+                    </motion.div>
+                </>
             )}
         </div>
     );

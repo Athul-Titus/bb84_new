@@ -3,6 +3,7 @@ from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 from alice import Alice
 from bob import Bob
+from cascade import run_cascade_with_trace
 import numpy as np
 import os
 import random
@@ -11,6 +12,7 @@ from qiskit import QuantumCircuit
 import uuid
 import time
 from scipy.stats import entropy as scipy_entropy
+from privacy import amplify, binary_entropy
 
 # Set template_folder to current directory to find ui.html
 app = Flask(__name__, template_folder=os.getcwd())
@@ -37,14 +39,6 @@ noise_config = {
 # ---------------------------------------------------------------------------
 # Noise & Attack API Routes
 # ---------------------------------------------------------------------------
-
-@app.route('/api/set_noise_config', methods=['POST'])
-def update_noise_config():
-    data = request.json or {}
-    global noise_config
-    noise_config.update(data)
-    print(f"[Config] Updated noise_config: {data}")
-    return jsonify({"status": "success", "config": noise_config})
 
 @app.route('/api/set_attack_mode', methods=['POST'])
 def update_attack_mode():
@@ -253,6 +247,33 @@ def compute_all_key_metrics(key_bits: list, bits_used: int) -> dict:
     }
 
 
+def _verification_math_payload(qber_percent: float) -> dict:
+    qber_decimal = max(0.0, min(1.0, float(qber_percent) / 100.0))
+    h2_qber = float(binary_entropy(qber_decimal))
+    secret_key_rate_r = float(1.0 - (2.0 * h2_qber))
+    return {
+        "qber_percent": round(float(qber_percent), 4),
+        "qber_decimal": round(qber_decimal, 6),
+        "h2_qber": round(h2_qber, 6),
+        "secret_key_rate_r": round(secret_key_rate_r, 6),
+        "secure_rate": secret_key_rate_r > 0.0,
+        "formula": "r = 1 - 2H2(QBER)",
+    }
+
+
+def _basis_alignment_score(alice_bases: list, bob_bases: list) -> float:
+    if not alice_bases or not bob_bases:
+        return 0.0
+    min_len = min(len(alice_bases), len(bob_bases))
+    if min_len == 0:
+        return 0.0
+    a = alice_bases[:min_len]
+    b = bob_bases[:min_len]
+    alice_diag_ratio = sum(1 for x in a if x == 1) / min_len
+    bob_diag_ratio = sum(1 for x in b if x == 1) / min_len
+    return round(max(0.0, (1.0 - abs(alice_diag_ratio - bob_diag_ratio)) * 100.0), 2)
+
+
 def _apply_attack_mode_preset(mode: str):
     """
     IoT paper Section 4.1 — Threats and Attack Vectors.
@@ -362,6 +383,8 @@ def generate_keys():
 
     alice.prepare_quantum_states(length)
     alice.shared_key = None  # CLEAR PREVIOUS KEY
+    alice.pa_stats = None
+    alice.sifted_key = None
 
     raw_bits = alice.raw_bits
     bases    = alice.bases
@@ -484,10 +507,16 @@ def sift_keys():
     bob_bits_trimmed    = bob_bits[:min_len]
 
     sifted_key, matches = bob.sift_keys(alice_bases_trimmed, bob_bases_trimmed, bob_bits_trimmed)
+    basis_sync_level = round((len(sifted_key) / min_len) * 100.0, 2) if min_len > 0 else 0.0
+    bias_alignment_score = _basis_alignment_score(alice_bases_trimmed, bob_bases_trimmed)
 
     return jsonify({
         "siftedKey": sifted_key,
         "matches":   matches,
+        "basisSyncLevel": basis_sync_level,
+        "biasAlignmentScore": bias_alignment_score,
+        "rawBitsCompared": min_len,
+        "bitsDiscarded": max(0, min_len - len(sifted_key)),
     })
 
 
@@ -531,7 +560,11 @@ def compare_sample():
     data             = request.json
     sample_indices   = data.get('sampleIndices', [])
     bob_sample_bits  = data.get('bobSampleBits', [])
+    bob_remaining_key = data.get('bobRemainingKey', [])
     matches          = data.get('originalMatches')
+    manual_noise_enabled = bool(data.get('manual_noise_enabled', False))
+    manual_noise_rate = float(data.get('manual_noise_rate', 0.0) or 0.0)
+    noise_tolerance_enabled = bool(data.get('noise_tolerance_enabled', False))
 
     if not matches:
         return jsonify({"error": "Missing original match indices"}), 400
@@ -542,46 +575,148 @@ def compare_sample():
 
     # Alice's sifted key — only use indices within bounds
     alice_sifted = [alice.raw_bits[i] for i in matches if i < len(alice.raw_bits)]
+    alice.sifted_key = list(alice_sifted)
+
+    # Validate sampled positions in sifted-key index space to prevent off-by-one drift.
+    sample_indices_sorted = sorted(set(int(i) for i in sample_indices if isinstance(i, int)))
+    if len(sample_indices_sorted) != len(sample_indices):
+        return jsonify({"error": "Sample indices must be unique integers."}), 400
+    if any(i < 0 or i >= len(alice_sifted) for i in sample_indices_sorted):
+        return jsonify({"error": "Sample indices out of bounds for sifted key."}), 400
 
     alice_sample_bits = []
     try:
-        alice_sample_bits = [alice_sifted[i] for i in sample_indices]
+        alice_sample_bits = [alice_sifted[i] for i in sample_indices_sorted]
     except IndexError as e:
         print(f"[Backend Error] Index out of bounds in sample: {e}. Sifted len: {len(alice_sifted)}")
         return jsonify({"error": "Invalid sample indices"}), 400
 
+    if len(bob_sample_bits) != len(alice_sample_bits):
+        return jsonify({"error": "Sample length mismatch between Alice and Bob."}), 400
+
     # Compare
     error_count = 0
-    total = len(sample_indices)
+    total = len(sample_indices_sorted)
 
     for a, b in zip(alice_sample_bits, bob_sample_bits):
         if a != b:
             error_count += 1
 
     qber = (error_count / total) * 100 if total > 0 else 0
-    # --- Advanced Intrusion Detection Math (Future Internet 2024 paper) ---
-    # Equation: p_hat = 4 * (QBER_hat - QBER_SN)
-    # We use decimals [0..1] for math
     qber_decimal = qber / 100.0
     qber_sn_decimal = float(noise_config.get("qber_sn", 0.0)) / 100.0
-    
-    # Calculate estimated interception density
-    p_hat = 4.0 * (qber_decimal - qber_sn_decimal)
-    
-    # p_hat logically ranges [0, 1]. Values < 0 mean noise was lower than expected.
-    # Values > 1 mean noise was exceptionally high (e.g. from network flips).
-    p_hat = max(0.0, p_hat) 
+    manual_noise_rate = max(0.0, min(1.0, manual_noise_rate))
 
-    # Determine "verified" status based on math thresholds instead of pure zero
-    # If p_hat is significantly above 0 (e.g. > 0.05 margin), assume Eve or severe channel noise.
-    verified = (p_hat < 0.10) and (error_count == 0 or noise_config.get("use_hardware_noise", False))
+    p_hat = max(0.0, 4.0 * (qber_decimal - qber_sn_decimal))
+
+    math_payload = _verification_math_payload(qber)
+    base_qber_threshold = 0.11
+    base_p_hat_threshold = 0.11
+    tolerance_override_active = manual_noise_enabled and noise_tolerance_enabled
+    effective_qber_threshold = max(base_qber_threshold, manual_noise_rate + 0.02) if tolerance_override_active else base_qber_threshold
+    verified = qber_decimal <= effective_qber_threshold
+    status = "success" if verified else "aborted"
+    abort_reason = None
+    abort_classification = None
+
     alice_remaining = None
+    cascade_stats = None
+    cascade_trace = None
+    corrected_bob_key = None
+    pa_stats = None
+    residual_errors = None
+    raw_remaining_key = None
+    bits_recovered = 0
+    fast_success = False
+    
     if verified:
-        alice_remaining = [alice_sifted[i] for i in range(len(alice_sifted)) if i not in sample_indices]
-        alice.shared_key = alice_remaining
-        print(f"[Alice] Verified Phase: Key established: {len(alice.shared_key)} bits. (QBER: {qber:.2f}%)")
+        sample_index_set = set(sample_indices_sorted)
+        alice_remaining = [alice_sifted[i] for i in range(len(alice_sifted)) if i not in sample_index_set]
+
+        if len(bob_remaining_key) != len(alice_remaining):
+            print("[Backend Error] Bob remaining key length mismatch during verification.")
+            return jsonify({"error": "Invalid or missing bobRemainingKey for Cascade."}), 400
+
+        raw_remaining_key = list(bob_remaining_key)
+
+        corrected_bob_key = list(bob_remaining_key)
+
+        if qber_decimal > 0:
+            print(f"[Cascade] QBER is {qber:.2f}%, running error correction...")
+            try:
+                cascade_result = run_cascade_with_trace(alice_remaining, bob_remaining_key, qber_decimal)
+                corrected_bob_key = cascade_result['corrected_key']
+                cascade_stats = cascade_result['stats']
+                cascade_trace = cascade_result.get('trace')
+                print(f"[Cascade] Correction complete. Found {cascade_stats.get('errors_found', 0)} errors.")
+            except Exception as e:
+                print(f"[Cascade ERROR] {e}")
+                verified = False
+                status = "aborted"
+                abort_reason = f"cascade_error: {str(e)}"
+                abort_classification = "software_error"
+
+        if qber_decimal == 0:
+            cascade_stats = {
+                "errors_found": 0,
+                "rounds_run": 0,
+                "parities_exchanged": 0,
+                "converged": True,
+                "iterations_used": 0,
+                "max_iterations": 0,
+                "residual_errors": 0,
+            }
+
+        if verified and corrected_bob_key is not None:
+            residual_errors = sum(1 for a, b in zip(alice_remaining, corrected_bob_key) if a != b)
+            if cascade_stats is None:
+                cascade_stats = {}
+            cascade_stats["residual_errors"] = residual_errors
+            cascade_stats["converged"] = residual_errors == 0
+            fast_success = (qber_decimal == 0.0 and residual_errors == 0)
+
+            bits_recovered = int(cascade_stats.get("errors_found", 0))
+            if residual_errors != 0:
+                verified = False
+                status = "aborted"
+                abort_reason = f"residual_errors_{residual_errors}"
+                abort_classification = "software_error"
+
+        if verified and corrected_bob_key is not None:
+            leaked_bits = int(cascade_stats.get("parities_exchanged", 0)) if cascade_stats else 0
+            final_key, pa_stats = amplify(corrected_bob_key, leaked_bits=leaked_bits, qber=qber_decimal)
+            if final_key is None:
+                verified = False
+                status = "aborted"
+                abort_reason = f"privacy_amplification_failed: {pa_stats.get('error', 'unknown')}"
+                abort_classification = "software_error"
+            else:
+                corrected_bob_key = final_key
+                alice_remaining = final_key
+                alice.pa_stats = pa_stats
+
+        if verified and corrected_bob_key is not None:
+            alice.shared_key = corrected_bob_key
+            bob.shared_key = corrected_bob_key
+        elif not verified:
+            alice.pa_stats = None
+
+        if verified:
+            print(f"[Alice] Verified Phase: Key established: {len(alice.shared_key)} bits. (QBER: {qber:.2f}%)")
+        else:
+             print(f"[Alice] Verification failed post-Cascade. QBER: {qber:.2f}%, p_hat: {p_hat:.3f}")
+
     else:
         print(f"[Alice] Verification failed. QBER: {qber:.2f}%, p_hat: {p_hat:.3f}")
+        if qber_decimal > effective_qber_threshold:
+            abort_reason = "qber_threshold_exceeded"
+            if tolerance_override_active and manual_noise_enabled:
+                abort_classification = "environmental_noise"
+            else:
+                abort_classification = "security_threat"
+        else:
+            abort_reason = "verification_failed"
+            abort_classification = "software_error"
 
     key_metrics = {}
     if verified and alice_remaining is not None:
@@ -589,15 +724,74 @@ def compare_sample():
         key_metrics = compute_all_key_metrics(alice_remaining, len(alice_sifted))
         key_metrics["execution_time_ms"] = round((time.time() - start_metrics) * 1000, 3)
 
+    if not verified:
+        status = "aborted"
+
+    if cascade_stats is None:
+        cascade_stats = {
+            "errors_found": 0,
+            "rounds_run": 0,
+            "parities_exchanged": 0,
+            "converged": False,
+            "iterations_used": 0,
+            "max_iterations": 0,
+            "residual_errors": residual_errors,
+        }
+
+    if abort_classification is None and not verified:
+        abort_classification = "software_error"
+
     return jsonify({
+        "status":          status,
+        "abort_reason":    abort_reason,
+        "abort_classification": abort_classification,
         "aliceSampleBits": alice_sample_bits,
         "errorCount":      error_count,
         "qber":            qber,
         "p_hat":           p_hat,
         "qber_sn":         noise_config.get("qber_sn", 0.0),
         "verified":        verified,
+        "fast_success":    fast_success,
+        "verification": {
+            "threshold_qber": round(effective_qber_threshold, 6),
+            "threshold_p_hat": base_p_hat_threshold,
+            "base_threshold_qber": base_qber_threshold,
+            "base_threshold_p_hat": base_p_hat_threshold,
+            "qber_decimal": round(qber_decimal, 6),
+            "p_hat": round(p_hat, 6),
+            "p_hat_advisory_only": True,
+            "math": math_payload,
+            "secure": verified,
+            "manual_noise_enabled": manual_noise_enabled,
+            "noise_tolerance_enabled": noise_tolerance_enabled,
+            "manual_noise_rate": round(manual_noise_rate, 6),
+            "tolerance_override_active": tolerance_override_active,
+        },
+        "abort_context": {
+            "qber_percent": round(qber, 4),
+            "threshold_qber": round(effective_qber_threshold * 100.0, 4),
+            "qber_delta_percent": round((qber_decimal - effective_qber_threshold) * 100.0, 4),
+            "p_hat": round(p_hat, 6),
+            "residual_errors": residual_errors,
+            "noise_tolerance_active": tolerance_override_active,
+            "manual_noise_rate": round(manual_noise_rate, 6),
+        },
+        "math":            math_payload,
         "noiseConfig":     noise_config,
         "keyMetrics":      key_metrics,
+        "cascade_stats":   cascade_stats,
+        "cascade_trace":   cascade_trace,
+        "remainingKey":    corrected_bob_key if verified else None,
+        "corrected_bob_key": corrected_bob_key if verified else None,
+        "raw_remaining_key": raw_remaining_key,
+        "residual_errors": residual_errors,
+        "pa_stats": pa_stats,
+        "efficiency_tags": {
+            "bits_recovered": bits_recovered,
+            "bits_discarded_sampling": len(sample_indices_sorted),
+            "bits_discarded_privacy": int(pa_stats.get("input_length", 0) - pa_stats.get("final_length", 0)) if pa_stats else 0,
+            "final_secret_entropy": key_metrics.get("entropy") if key_metrics else None,
+        },
     })
 
 
@@ -606,8 +800,12 @@ def compare_sample():
 @app.route('/api/alice/key_status', methods=['GET'])
 def get_alice_key():
     if alice.shared_key:
-        return jsonify({"sharedKey": alice.shared_key})
-    return jsonify({"sharedKey": None})
+        return jsonify({
+            "sharedKey": alice.shared_key,
+            "paStats": alice.pa_stats,
+            "siftedKeyLength": len(alice.sifted_key) if alice.sifted_key else 0,
+        })
+    return jsonify({"sharedKey": None, "paStats": None, "siftedKeyLength": 0})
 
 
 @app.route('/api/finalize_key', methods=['POST'])
@@ -796,6 +994,9 @@ def verify_peer_sample():
     peer_ip          = data.get('peer_ip')
     sifted_key       = data.get('sifted_key')
     original_matches = data.get('original_matches')
+    manual_noise_enabled = bool(data.get('manual_noise_enabled', False))
+    manual_noise_rate = float(data.get('manual_noise_rate', 0.0) or 0.0)
+    noise_tolerance_enabled = bool(data.get('noise_tolerance_enabled', False))
 
     if not (peer_ip and sifted_key and original_matches):
         return jsonify({"error": "Missing parameters for network verification"}), 400
@@ -807,7 +1008,11 @@ def verify_peer_sample():
         payload = {
             "sampleIndices":  indices,
             "bobSampleBits":  bits,
+            "bobRemainingKey": remaining,
             "originalMatches": original_matches,
+            "manual_noise_enabled": manual_noise_enabled,
+            "manual_noise_rate": manual_noise_rate,
+            "noise_tolerance_enabled": noise_tolerance_enabled,
         }
         print(f"[Bob] Sending sample to Alice for verification at {target_url}...")
         resp = requests.post(target_url, json=payload, timeout=5)
@@ -818,15 +1023,29 @@ def verify_peer_sample():
         alice_res = resp.json()
 
         return jsonify({
+            "status":        alice_res.get('status'),
+            "abort_reason":  alice_res.get('abort_reason'),
+            "abort_classification": alice_res.get('abort_classification'),
+            "fast_success":  alice_res.get('fast_success', False),
             "sampleIndices": indices,
             "sampleBits":    bits,
-            "remainingKey":  remaining,
+            "remainingKey":  alice_res.get('remainingKey', remaining),
+            "raw_remaining_key": alice_res.get('raw_remaining_key', remaining),
             "errorCount":    alice_res.get('errorCount'),
             "qber":          alice_res.get('qber'),
             "p_hat":         alice_res.get('p_hat'),
+            "qber_sn":       alice_res.get('qber_sn'),
             "verified":      alice_res.get('verified'),
+            "verification":  alice_res.get('verification'),
+            "abort_context": alice_res.get('abort_context'),
+            "math":          alice_res.get('math'),
             "noiseConfig":   alice_res.get('noiseConfig'),
             "keyMetrics":    alice_res.get('keyMetrics'),
+            "cascade_stats": alice_res.get('cascade_stats'),
+            "cascade_trace": alice_res.get('cascade_trace'),
+            "corrected_bob_key": alice_res.get('corrected_bob_key'),
+            "pa_stats": alice_res.get('pa_stats'),
+            "efficiency_tags": alice_res.get('efficiency_tags'),
         })
 
     except Exception as e:

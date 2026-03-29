@@ -90,7 +90,17 @@ class Bob(Node):
                     valid_char = char
                     break
 
-            self.measured_bits.append(int(valid_char))
+            # ---------------------------------------------------------------
+            # Manual Noise Injection Fallback (Guarantees QBER for Demo)
+            # If a custom channel noise rate is set, manually flip the bit.
+            # ---------------------------------------------------------------
+            final_bit = int(valid_char)
+            if noise_config and noise_config.get('channel_noise_rate', 0.0) > 0:
+                import random
+                if random.random() < float(noise_config.get('channel_noise_rate')):
+                    final_bit = 1 - final_bit
+            
+            self.measured_bits.append(final_bit)
 
         self.log(f"Measurement complete. Bases: {self.bob_bases}, Bits: {self.measured_bits}")
         return self.bob_bases, self.measured_bits
