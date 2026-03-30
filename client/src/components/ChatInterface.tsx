@@ -132,19 +132,29 @@ const ChatInterface: React.FC = () => {
     };
 
     // ── Poll chat messages ────────────────────────────────────────────────────
-
+    // Poll whenever a key exists — DO NOT gate on `connected` because the peer
+    // connection flag can go false after QKD session events while the peer can
+    // still push messages to our /api/chat/receive endpoint.  Alice's messages
+    // are stored locally (delivered by Alice's backend via push) and are always
+    // accessible via /api/chat/messages regardless of the connection state.
     useEffect(() => {
-        if (!connected) return;
         const fetchMessages = async () => {
             try {
                 const res = await axios.post('/api/chat/messages', { key: keyStr });
-                setMessages(res.data.messages || []);
+                const incoming = (res.data.messages || []) as ChatEntry[];
+                // Only update if count changed to avoid flicker
+                setMessages(prev =>
+                    prev.length !== incoming.length || incoming.some((m, i) => m.id !== prev[i]?.id)
+                        ? incoming
+                        : prev
+                );
             } catch { }
         };
         fetchMessages();
         pollRef.current = setInterval(fetchMessages, 1500);
         return () => clearInterval(pollRef.current);
-    }, [connected, keyStr]);
+    }, [keyStr]); // ← removed 'connected' dependency
+
 
     useEffect(() => {
         if (messages.length > prevMsgCount.current && shouldAutoScroll.current) {

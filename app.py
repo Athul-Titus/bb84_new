@@ -1679,22 +1679,29 @@ def chat_send():
     
     return jsonify({"success": True, "entry": entry})
 
-@app.route('/api/chat/messages', methods=['POST'])
+@app.route('/api/chat/messages', methods=['POST', 'GET'])
 def chat_messages_get():
     data = request.json or {}
     frontend_key = data.get('key', '')
-    
+
     processed = []
     for msg in chat_messages:
+        # Guard: skip legacy plain-string hex entries (from old encrypt_message endpoint)
+        # dict(string) raises TypeError — always ensure msg is a dict before processing
+        if not isinstance(msg, dict):
+            continue
         m = dict(msg)
-        # If we received it from a peer, plaintext is stripped over the wire
+        # If we received it from a peer, plaintext is stripped over the wire.
+        # Try key_used first (Alice's original key sent in the message envelope),
+        # then fall back to the frontend's current key.
         if not m.get('plaintext') and m.get('encrypted_hex'):
             decrypt_key = m.get('key_used') or frontend_key
             if decrypt_key:
                 m['plaintext'] = _xor_decrypt(m['encrypted_hex'], decrypt_key)
         processed.append(m)
-        
+
     return jsonify({"messages": processed})
+
 
 @app.route('/api/eve/intercept', methods=['GET'])
 def eve_intercept():
