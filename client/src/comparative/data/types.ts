@@ -1,4 +1,4 @@
-export type ProtocolKey = 'qsafe' | 'e91' | 'b92' | 'bb84' | 'sgs04';
+export type ProtocolKey = 'qsafe' | 'e91' | 'b92' | 'bb84' | 'sgs04' | 'sarg04' | 'sixstate' | 'decoyphase' | 'mdi' | 'cvqkd';
 
 export type AttackScenario = 'no_attack' | 'intercept_resend' | 'eve_50';
 
@@ -50,6 +50,11 @@ export interface PaperKnowledgeBase {
     B92: PaperProtocol;
     E91: PaperProtocol;
     SGS04: PaperProtocol;
+    SARG04?: PaperProtocol;
+    SIXSTATE?: PaperProtocol;
+    DECOYPHASE?: PaperProtocol;
+    MDI?: PaperProtocol;
+    CVQKD?: PaperProtocol;
   };
   comparative_results: {
     ranking: string[];
@@ -58,9 +63,9 @@ export interface PaperKnowledgeBase {
     composite_index_scores: Record<string, number>;
     performance_metrics: string[];
     attack_qber: {
-      no_attack: Record<'BB84' | 'B92' | 'E91' | 'SGS04', number>;
-      intercept_resend: Record<'BB84' | 'B92' | 'E91' | 'SGS04', number>;
-      eve_50_percent: Record<'BB84' | 'B92' | 'E91' | 'SGS04', number>;
+      no_attack: Record<string, number>;
+      intercept_resend: Record<string, number>;
+      eve_50_percent: Record<string, number>;
     };
   };
 }
@@ -100,4 +105,43 @@ export interface FeatureMatrixRow {
   b92: 'yes' | 'no' | 'partial';
   bb84: 'yes' | 'no' | 'partial';
   sgs04: 'yes' | 'no' | 'partial';
+  sarg04?: 'yes' | 'no' | 'partial';
+  sixstate?: 'yes' | 'no' | 'partial';
+  decoyphase?: 'yes' | 'no' | 'partial';
+  mdi?: 'yes' | 'no' | 'partial';
+  cvqkd?: 'yes' | 'no' | 'partial';
+}
+
+export interface KeyManagementComparison {
+  protocol: string;
+  keyStorage: string;
+  forensicRecovery: string;
+  selfRenewal: string;
+  forwardSecrecy: string;
+  keyExhaustionRisk: string;
+  authentication: string;
+}
+
+export interface PerformanceMetrics {
+  protocol: string;
+  quantumStates: string;
+  numberBases: string | number;
+  photonSource: string;
+  hardwareChangeNeeded: string;
+  siftingEfficiency: string;
+  bitLossPerSession: string;
+  secretKeyRate: string;
+  sessionStartupSpeed: string;
+  photonsPerKeyBit: string;
+  formalSecurityProof: string;
+  qberDetectionThreshold: string;
+  eveDetectionSpeed: string;
+  pnsAttackResistance: string;
+  sidechannelResistance: string;
+  basisPredictability: string;
+  deploymentComplexity: string;
+  maturityLevel: string;
+  g5gSuitability: string;
+  iotSuitability: string;
+  uniqueNovelty: string;
 }

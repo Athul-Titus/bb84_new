@@ -2,7 +2,7 @@
 import { createContext, useContext, useReducer, type Dispatch, type ReactNode } from 'react';
 import type { AttackScenario, ProtocolKey } from '../data/types';
 
-export type DashboardTab = 'overview' | 'qber' | 'features' | 'pipeline' | 'deepdive' | 'ai';
+export type DashboardTab = 'overview' | 'qber' | 'features' | 'pipeline' | 'deepdive' | 'ai' | 'keymanagement' | 'performance';
 
 type FeatureFilter = 'all' | 'differences' | 'qsafe';
 
@@ -46,6 +46,11 @@ const initialState: DashboardState = {
     b92: true,
     bb84: true,
     sgs04: true,
+    sarg04: true,
+    sixstate: true,
+    decoyphase: true,
+    mdi: true,
+    cvqkd: true,
   },
   aiChat: {
     messages: [],

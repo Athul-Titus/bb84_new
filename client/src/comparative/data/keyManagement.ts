@@ -1,0 +1,118 @@
+import type { KeyManagementComparison } from './types';
+
+export const KEY_MANAGEMENT_COMPARISON: KeyManagementComparison[] = [
+  {
+    protocol: 'BB84',
+    keyStorage: 'Disk/database',
+    forensicRecovery: 'Possible',
+    selfRenewal: 'Manual reset needed',
+    forwardSecrecy: 'Partial',
+    keyExhaustionRisk: 'Yes',
+    authentication: 'Basic state verification',
+  },
+  {
+    protocol: 'B92',
+    keyStorage: 'Disk/database',
+    forensicRecovery: 'Possible',
+    selfRenewal: 'Manual reset needed',
+    forwardSecrecy: 'Partial',
+    keyExhaustionRisk: 'Yes',
+    authentication: 'Unambiguous discrimination based',
+  },
+  {
+    protocol: 'E91',
+    keyStorage: 'Disk/database',
+    forensicRecovery: 'Possible',
+    selfRenewal: 'Manual reset needed',
+    forwardSecrecy: 'Partial',
+    keyExhaustionRisk: 'Yes',
+    authentication: 'Bell inequality verification',
+  },
+  {
+    protocol: 'SARG04',
+    keyStorage: 'Disk/database',
+    forensicRecovery: 'Possible',
+    selfRenewal: 'Manual reset needed',
+    forwardSecrecy: 'Partial',
+    keyExhaustionRisk: 'Yes',
+    authentication: 'Enhanced eavesdropper rejection',
+  },
+  {
+    protocol: 'Six-State',
+    keyStorage: 'Disk/database',
+    forensicRecovery: 'Possible',
+    selfRenewal: 'Manual reset needed',
+    forwardSecrecy: 'Partial',
+    keyExhaustionRisk: 'Yes',
+    authentication: 'Six-basis state authentication',
+  },
+  {
+    protocol: 'Decoy-State',
+    keyStorage: 'Disk/database',
+    forensicRecovery: 'Possible',
+    selfRenewal: 'Manual reset needed',
+    forwardSecrecy: 'Partial',
+    keyExhaustionRisk: 'Yes',
+    authentication: 'Decoy-aided verification',
+  },
+  {
+    protocol: 'MDI-QKD',
+    keyStorage: 'Disk/database',
+    forensicRecovery: 'Possible',
+    selfRenewal: 'Manual reset needed',
+    forwardSecrecy: 'Partial',
+    keyExhaustionRisk: 'Yes',
+    authentication: 'Device-independent Bell test',
+  },
+  {
+    protocol: 'CV-QKD',
+    keyStorage: 'Disk/database',
+    forensicRecovery: 'Possible',
+    selfRenewal: 'Manual reset needed',
+    forwardSecrecy: 'Partial',
+    keyExhaustionRisk: 'Yes',
+    authentication: 'Gaussian state authentication',
+  },
+  {
+    protocol: 'QSafe (Your Protocol)',
+    keyStorage: 'RAM-only circular buffer',
+    forensicRecovery: 'Impossible — keys never persist',
+    selfRenewal: 'Autonomous — feedback loop self-refills',
+    forwardSecrecy: 'Full — ephemeral key per message',
+    keyExhaustionRisk: 'No — self-sustaining loop',
+    authentication: 'Continuous QBER + Cascade integration',
+  },
+];
+
+export const KEY_MANAGEMENT_FEATURES = {
+  keyStorage: {
+    title: 'Key Storage',
+    description: 'Where and how keys are stored for retrieval',
+    tooltip: 'Persistent storage (disk/database) vs ephemeral (RAM-only)',
+  },
+  forensicRecovery: {
+    title: 'Forensic Key Recovery',
+    description: 'Possibility of recovering keys after compromise',
+    tooltip: 'Whether compromised keys can be recovered through forensic analysis',
+  },
+  selfRenewal: {
+    title: 'Key Self-Renewal',
+    description: 'How frequently and automatically keys are renewed',
+    tooltip: 'Manual reset dependency vs autonomous feedback-based renewal',
+  },
+  forwardSecrecy: {
+    title: 'Forward Secrecy',
+    description: 'Protection of past keys from future compromise',
+    tooltip: 'Partial (session-level) vs Full (message-level)',
+  },
+  keyExhaustionRisk: {
+    title: 'Key Exhaustion Risk',
+    description: 'Risk of running out of cryptographic keystream',
+    tooltip: 'Whether protocol can sustain indefinite operation',
+  },
+  authentication: {
+    title: 'Authentication Method',
+    description: 'Mechanism to verify key legitimacy',
+    tooltip: 'How the protocol authenticates generated keys',
+  },
+};
