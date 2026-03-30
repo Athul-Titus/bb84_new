@@ -12,6 +12,11 @@ class Bob(Node):
         self.measured_bits = []
         self.sifted_key = []
         self.simulator = AerSimulator()  # default: ideal
+        self.peer_sacrifice_raw_indices = []
+        self.peer_round_id = None
+        self.last_sample_indices = []
+        self.last_flip_log = []
+        self.hash_check_passed = None
 
     def measure_qubits(self, encoded_qubits, noise_config=None):
         """
@@ -162,6 +167,33 @@ class Bob(Node):
         sample_set = set(sample_indices)
         remaining_key = [sifted_key[i] for i in range(total_len) if i not in sample_set]
 
+        return sample_indices, sample_bits, remaining_key
+
+    def sample_from_peer_raw_indices(self, sifted_key, original_matches, peer_raw_indices):
+        """
+        Deterministically derive sifted-key sample indices from Alice-provided
+        raw-position sacrifice indices.
+        """
+        if not sifted_key:
+            return [], [], []
+
+        raw_index_set = set(int(i) for i in peer_raw_indices if isinstance(i, int))
+        mapped_indices = [
+            sifted_idx
+            for sifted_idx, raw_idx in enumerate(original_matches)
+            if raw_idx in raw_index_set
+        ]
+
+        # Keep flow robust even when mapping becomes empty due to packet-loss trimming.
+        if not mapped_indices:
+            fallback_size = max(1, min(len(sifted_key), 5))
+            mapped_indices = list(range(fallback_size))
+
+        sample_indices = sorted(set(mapped_indices))
+        sample_bits = [sifted_key[i] for i in sample_indices]
+        sample_set = set(sample_indices)
+        remaining_key = [sifted_key[i] for i in range(len(sifted_key)) if i not in sample_set]
+        self.last_sample_indices = list(sample_indices)
         return sample_indices, sample_bits, remaining_key
 
 if __name__ == "__main__":

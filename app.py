@@ -11,6 +11,7 @@ import socket
 from qiskit import QuantumCircuit
 import uuid
 import time
+import hashlib
 from scipy.stats import entropy as scipy_entropy
 from privacy import amplify, binary_entropy
 
@@ -274,6 +275,19 @@ def _basis_alignment_score(alice_bases: list, bob_bases: list) -> float:
     return round(max(0.0, (1.0 - abs(alice_diag_ratio - bob_diag_ratio)) * 100.0), 2)
 
 
+def _apply_flip_log_to_key(key_bits: list, flip_log: list) -> list:
+    updated = list(key_bits)
+    for idx in flip_log:
+        if isinstance(idx, int) and 0 <= idx < len(updated):
+            updated[idx] = 1 - updated[idx]
+    return updated
+
+
+def _compute_key_hash(key_bits: list) -> str:
+    bit_string = "".join(str(int(b)) for b in key_bits)
+    return hashlib.sha256(bit_string.encode("utf-8")).hexdigest()
+
+
 def _apply_attack_mode_preset(mode: str):
     """
     IoT paper Section 4.1 — Threats and Attack Vectors.
@@ -385,6 +399,20 @@ def generate_keys():
     alice.shared_key = None  # CLEAR PREVIOUS KEY
     alice.pa_stats = None
     alice.sifted_key = None
+    alice.protocol_round_id = str(uuid.uuid4())
+    alice.generate_sacrifice_indices(length)
+    alice.pending_raw_remaining_key = None
+    alice.pending_qber = None
+    alice.pending_leaked_bits = 0
+    alice.pending_flip_log = []
+    alice.peer_corrected_remaining_key = None
+    alice.hash_check_passed = None
+    alice.final_key_hash = None
+    bob.peer_sacrifice_raw_indices = []
+    bob.peer_round_id = None
+    bob.last_sample_indices = []
+    bob.last_flip_log = []
+    bob.hash_check_passed = None
 
     raw_bits = alice.raw_bits
     bases    = alice.bases
@@ -438,6 +466,8 @@ def get_quantum_data():
         "dropped":        dropped,
         "flips":          flips,
         "eve_active":     noise_config.get("interception_density", 0.0) > 0,
+        "sacrifice_indices": alice.sacrifice_indices,
+        "round_id": alice.protocol_round_id,
     })
 
 
@@ -500,8 +530,8 @@ def sift_keys():
         return jsonify({"error": "Missing Bob data for sifting"}), 400
 
     # Handle mismatched lengths caused by packet loss:
-    # Only compare up to min(len(alice_bases), len(bob_bases))
-    min_len = min(len(alice_bases), len(bob_bases))
+    # Only compare up to min(len(alice_bases), len(bob_bases), len(bob_bits))
+    min_len = min(len(alice_bases), len(bob_bases), len(bob_bits))
     alice_bases_trimmed = alice_bases[:min_len]
     bob_bases_trimmed   = bob_bases[:min_len]
     bob_bits_trimmed    = bob_bits[:min_len]
@@ -565,6 +595,8 @@ def compare_sample():
     manual_noise_enabled = bool(data.get('manual_noise_enabled', False))
     manual_noise_rate = float(data.get('manual_noise_rate', 0.0) or 0.0)
     noise_tolerance_enabled = bool(data.get('noise_tolerance_enabled', False))
+    network_mode = bool(data.get('network_mode', False))
+    round_id = data.get('round_id')
 
     if not matches:
         return jsonify({"error": "Missing original match indices"}), 400
@@ -626,6 +658,7 @@ def compare_sample():
     pa_stats = None
     residual_errors = None
     raw_remaining_key = None
+    cascade_flip_log = []
     bits_recovered = 0
     fast_success = False
     
@@ -647,6 +680,7 @@ def compare_sample():
             corrected_bob_key = cascade_result['corrected_key']
             cascade_stats = cascade_result['stats']
             cascade_trace = cascade_result.get('trace')
+            cascade_flip_log = cascade_result.get('flip_log', [])
             print(f"[Cascade] Correction complete. Found {cascade_stats.get('errors_found', 0)} errors.")
         except Exception as e:
             print(f"[Cascade ERROR] {e}")
@@ -697,16 +731,28 @@ def compare_sample():
             if verified and pa_stats and pa_stats.get("warning"):
                 print(f"[PA WARNING] {pa_stats.get('warning')}")
 
+            if verified and network_mode:
+                alice.pending_raw_remaining_key = list(raw_remaining_key or [])
+                alice.pending_qber = qber_decimal
+                alice.pending_leaked_bits = leaked_bits
+                alice.pending_flip_log = list(cascade_flip_log)
+                alice.peer_corrected_remaining_key = None
+                alice.final_key_hash = None
+                alice.hash_check_passed = None
+                alice.protocol_round_id = round_id or alice.protocol_round_id
+
         # FIX 3: Set key regardless of strict verification — enables tolerance mode workflows
-        if corrected_bob_key is not None:
+        if corrected_bob_key is not None and not network_mode:
             alice.shared_key = corrected_bob_key
             bob.shared_key = corrected_bob_key
         
         if not verified:
             alice.pa_stats = None
 
-        if verified:
+        if verified and not network_mode:
             print(f"[Alice] Verified Phase: Key established: {len(alice.shared_key)} bits. (QBER: {qber:.2f}%)")
+        elif verified and network_mode:
+            print("[Alice] Verification succeeded in network mode. Awaiting peer trace/hash checks.")
         else:
              print(f"[Alice] Verification failed post-Cascade. QBER: {qber:.2f}%, p_hat: {p_hat:.3f}")
 
@@ -785,11 +831,14 @@ def compare_sample():
         "keyMetrics":      key_metrics,
         "cascade_stats":   cascade_stats,
         "cascade_trace":   cascade_trace,
+        "cascade_flip_log": cascade_flip_log,
         "remainingKey":    corrected_bob_key if verified else None,
         "corrected_bob_key": corrected_bob_key if verified else None,
         "raw_remaining_key": raw_remaining_key,
         "residual_errors": residual_errors,
         "pa_stats": pa_stats,
+        "round_id": round_id or alice.protocol_round_id,
+        "hash_pending": bool(network_mode and verified),
         "pa_warning": pa_stats.get("warning") if isinstance(pa_stats, dict) else None,
         "efficiency_tags": {
             "bits_recovered": bits_recovered,
@@ -934,6 +983,8 @@ def fetch_from_peer():
 
         alice_data = resp.json()
         qubit_data = alice_data.get('qubit_data')
+        bob.peer_sacrifice_raw_indices = list(alice_data.get('sacrifice_indices') or [])
+        bob.peer_round_id = alice_data.get('round_id')
         noise_stats = {
             "dropped":        alice_data.get("dropped", 0),
             "flips":          alice_data.get("flips", 0),
@@ -950,6 +1001,8 @@ def fetch_from_peer():
             "bobBases":     bob_bases,
             "measuredBits": measured_bits,
             "noiseStats":   noise_stats,
+            "sacrificeIndices": bob.peer_sacrifice_raw_indices,
+            "roundId": bob.peer_round_id,
         })
 
     except Exception as e:
@@ -991,9 +1044,92 @@ def fetch_peer_bases():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/network/apply_peer_correction_trace', methods=['POST'])
+def apply_peer_correction_trace():
+    """Alice applies Bob's Cascade flip log on her local remaining key baseline."""
+    data = request.json or {}
+    round_id = data.get('round_id')
+    flip_log = data.get('flip_log', [])
+
+    if round_id and alice.protocol_round_id and round_id != alice.protocol_round_id:
+        return jsonify({"error": "Round mismatch for correction trace."}), 409
+
+    if alice.pending_raw_remaining_key is None:
+        return jsonify({"error": "No pending key context for correction trace."}), 400
+
+    if not isinstance(flip_log, list):
+        return jsonify({"error": "flip_log must be a list."}), 400
+
+    normalized_flip_log = [int(i) for i in flip_log if isinstance(i, int)]
+    alice.pending_flip_log = list(normalized_flip_log)
+    alice.peer_corrected_remaining_key = _apply_flip_log_to_key(alice.pending_raw_remaining_key, normalized_flip_log)
+    print(f"Applied peer correction trace: [{len(normalized_flip_log)} bits flipped]")
+
+    return jsonify({
+        "status": "success",
+        "applied_flips": len(normalized_flip_log),
+    })
+
+
+@app.route('/api/network/hash_check', methods=['POST'])
+def network_hash_check():
+    """Bob submits final-key hash; Alice verifies and hard-fails mismatches."""
+    data = request.json or {}
+    round_id = data.get('round_id')
+    bob_key_hash = data.get('bob_key_hash', '')
+
+    if not bob_key_hash:
+        return jsonify({"error": "bob_key_hash is required."}), 400
+    if round_id and alice.protocol_round_id and round_id != alice.protocol_round_id:
+        return jsonify({"error": "Round mismatch for hash check."}), 409
+
+    base_key = alice.peer_corrected_remaining_key
+    if base_key is None and alice.pending_raw_remaining_key is not None:
+        base_key = _apply_flip_log_to_key(alice.pending_raw_remaining_key, alice.pending_flip_log or [])
+
+    if base_key is None:
+        return jsonify({"error": "No corrected key available for hash verification."}), 400
+
+    leaked_bits = int(alice.pending_leaked_bits or 0)
+    qber = float(alice.pending_qber or 0.0)
+    final_key, pa_stats = amplify(base_key, leaked_bits=leaked_bits, qber=qber)
+    if final_key is None:
+        final_key = list(base_key)
+
+    alice_hash = _compute_key_hash(final_key)
+    hash_match = (alice_hash == bob_key_hash)
+
+    if hash_match:
+        alice.shared_key = list(final_key)
+        alice.pa_stats = pa_stats
+        alice.hash_check_passed = True
+        alice.final_key_hash = alice_hash
+        return jsonify({
+            "status": "success",
+            "verified": True,
+            "hash_match": True,
+            "alice_hash": alice_hash,
+            "abort_classification": None,
+            "abort_reason": None,
+        })
+
+    alice.shared_key = None
+    alice.pa_stats = None
+    alice.hash_check_passed = False
+    alice.final_key_hash = alice_hash
+    return jsonify({
+        "status": "aborted",
+        "verified": False,
+        "hash_match": False,
+        "alice_hash": alice_hash,
+        "abort_classification": "software_error",
+        "abort_reason": "key_hash_mismatch",
+    }), 200
+
+
 @app.route('/api/verify_peer_sample', methods=['POST'])
 def verify_peer_sample():
-    """Bob calculates sample locally, then sends it to Alice for comparison."""
+    """Bob uses Alice-authored sample indices and performs hardened final hash check."""
     import requests
     data             = request.json
     peer_ip          = data.get('peer_ip')
@@ -1003,10 +1139,14 @@ def verify_peer_sample():
     manual_noise_rate = float(data.get('manual_noise_rate', 0.0) or 0.0)
     noise_tolerance_enabled = bool(data.get('noise_tolerance_enabled', False))
 
-    if not (peer_ip and sifted_key and original_matches):
+    if not peer_ip or sifted_key is None or original_matches is None:
         return jsonify({"error": "Missing parameters for network verification"}), 400
 
-    indices, bits, remaining = bob.sample_for_verification(sifted_key)
+    indices, bits, remaining = bob.sample_from_peer_raw_indices(
+        sifted_key,
+        original_matches,
+        bob.peer_sacrifice_raw_indices,
+    )
 
     try:
         target_url = f"http://{peer_ip}:5000/api/compare_sample"
@@ -1018,6 +1158,8 @@ def verify_peer_sample():
             "manual_noise_enabled": manual_noise_enabled,
             "manual_noise_rate": manual_noise_rate,
             "noise_tolerance_enabled": noise_tolerance_enabled,
+            "network_mode": True,
+            "round_id": bob.peer_round_id,
         }
         print(f"[Bob] Sending sample to Alice for verification at {target_url}...")
         resp = requests.post(target_url, json=payload, timeout=5)
@@ -1027,6 +1169,85 @@ def verify_peer_sample():
 
         alice_res = resp.json()
 
+        hash_check = {
+            "status": "skipped",
+            "hash_match": False,
+            "abort_reason": None,
+            "abort_classification": None,
+        }
+
+        verified = bool(alice_res.get('verified'))
+        corrected_key = alice_res.get('corrected_bob_key') or alice_res.get('remainingKey') or remaining
+        cascade_flip_log = list(alice_res.get('cascade_flip_log') or [])
+
+        if verified:
+            bob.last_flip_log = list(cascade_flip_log)
+            trace_url = f"http://{peer_ip}:5000/api/network/apply_peer_correction_trace"
+            trace_payload = {
+                "round_id": alice_res.get('round_id') or bob.peer_round_id,
+                "flip_log": cascade_flip_log,
+            }
+            trace_resp = requests.post(trace_url, json=trace_payload, timeout=5)
+            if trace_resp.status_code != 200:
+                return jsonify({
+                    "status": "aborted",
+                    "abort_reason": "peer_trace_sync_failed",
+                    "abort_classification": "software_error",
+                    "verified": False,
+                    "sampleIndices": indices,
+                    "sampleBits": bits,
+                })
+
+            bob_hash = _compute_key_hash(corrected_key)
+            hash_url = f"http://{peer_ip}:5000/api/network/hash_check"
+            hash_resp = requests.post(hash_url, json={
+                "round_id": alice_res.get('round_id') or bob.peer_round_id,
+                "bob_key_hash": bob_hash,
+            }, timeout=5)
+            if hash_resp.status_code != 200:
+                return jsonify({
+                    "status": "aborted",
+                    "abort_reason": "peer_hash_check_failed",
+                    "abort_classification": "software_error",
+                    "verified": False,
+                    "sampleIndices": indices,
+                    "sampleBits": bits,
+                })
+
+            hash_check = hash_resp.json()
+            if not hash_check.get('hash_match'):
+                bob.shared_key = None
+                bob.hash_check_passed = False
+                return jsonify({
+                    "status": "aborted",
+                    "abort_reason": hash_check.get('abort_reason', 'key_hash_mismatch'),
+                    "abort_classification": hash_check.get('abort_classification', 'software_error'),
+                    "verified": False,
+                    "sampleIndices": indices,
+                    "sampleBits": bits,
+                    "remainingKey": None,
+                    "raw_remaining_key": alice_res.get('raw_remaining_key', remaining),
+                    "errorCount": alice_res.get('errorCount'),
+                    "qber": alice_res.get('qber'),
+                    "p_hat": alice_res.get('p_hat'),
+                    "qber_sn": alice_res.get('qber_sn'),
+                    "verification": alice_res.get('verification'),
+                    "abort_context": alice_res.get('abort_context'),
+                    "math": alice_res.get('math'),
+                    "noiseConfig": alice_res.get('noiseConfig'),
+                    "keyMetrics": alice_res.get('keyMetrics'),
+                    "cascade_stats": alice_res.get('cascade_stats'),
+                    "cascade_trace": alice_res.get('cascade_trace'),
+                    "corrected_bob_key": None,
+                    "pa_stats": alice_res.get('pa_stats'),
+                    "efficiency_tags": alice_res.get('efficiency_tags'),
+                    "cascade_flip_log": cascade_flip_log,
+                    "hash_check": hash_check,
+                })
+
+            bob.shared_key = list(corrected_key)
+            bob.hash_check_passed = True
+
         return jsonify({
             "status":        alice_res.get('status'),
             "abort_reason":  alice_res.get('abort_reason'),
@@ -1034,13 +1255,13 @@ def verify_peer_sample():
             "fast_success":  alice_res.get('fast_success', False),
             "sampleIndices": indices,
             "sampleBits":    bits,
-            "remainingKey":  alice_res.get('remainingKey', remaining),
+            "remainingKey":  corrected_key if verified else alice_res.get('remainingKey', remaining),
             "raw_remaining_key": alice_res.get('raw_remaining_key', remaining),
             "errorCount":    alice_res.get('errorCount'),
             "qber":          alice_res.get('qber'),
             "p_hat":         alice_res.get('p_hat'),
             "qber_sn":       alice_res.get('qber_sn'),
-            "verified":      alice_res.get('verified'),
+            "verified":      verified and bool(hash_check.get('hash_match', False) if verified else True),
             "verification":  alice_res.get('verification'),
             "abort_context": alice_res.get('abort_context'),
             "math":          alice_res.get('math'),
@@ -1048,9 +1269,11 @@ def verify_peer_sample():
             "keyMetrics":    alice_res.get('keyMetrics'),
             "cascade_stats": alice_res.get('cascade_stats'),
             "cascade_trace": alice_res.get('cascade_trace'),
-            "corrected_bob_key": alice_res.get('corrected_bob_key'),
+            "corrected_bob_key": corrected_key if verified else alice_res.get('corrected_bob_key'),
             "pa_stats": alice_res.get('pa_stats'),
             "efficiency_tags": alice_res.get('efficiency_tags'),
+            "cascade_flip_log": cascade_flip_log,
+            "hash_check": hash_check,
         })
 
     except Exception as e:

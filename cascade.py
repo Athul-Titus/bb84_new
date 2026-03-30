@@ -24,6 +24,7 @@ class Cascade:
         self.iterations_used = 0
         self.residual_errors = None
         self.converged = False
+        self.flip_log = []
 
         self.trace = {
             "seed": None,
@@ -63,6 +64,7 @@ class Cascade:
         if len(positions) == 1:
             error_pos = positions[0]
             self.bob_key[error_pos] = 1 - self.bob_key[error_pos]
+            self.flip_log.append(error_pos)
             self.errors_found += 1
             return error_pos
 
@@ -125,6 +127,7 @@ class Cascade:
         self.trace["skipped"] = reason
         result = {
             "corrected_key": list(self.bob_key),
+            "flip_log": [],
             "stats": {
                 "errors_found": 0,
                 "rounds_run": 0,
@@ -249,6 +252,7 @@ class Cascade:
 
         result = {
             "corrected_key": list(self.bob_key),
+            "flip_log": list(self.flip_log),
             "stats": {
                 "errors_found": self.errors_found,
                 "rounds_run": self.rounds_run,
