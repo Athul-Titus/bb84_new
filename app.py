@@ -676,7 +676,19 @@ def compare_sample():
 
         print(f"[Cascade] QBER is {qber:.2f}%, running error correction...")
         try:
-            cascade_result = run_cascade_with_trace(alice_remaining, bob_remaining_key, qber_decimal)
+            # FIX: When QBER=0 the Cascade protocol skips correction entirely ("qber_zero").
+            # However, the QBER sample only covers a subset of the sifted key, so the
+            # remaining bits can still contain real mismatches (index/state inconsistency).
+            # Detect those mismatches BEFORE calling Cascade and, if found, substitute a
+            # small estimated QBER so that Cascade actually runs and fixes them.
+            effective_qber_for_cascade = qber_decimal
+            if qber_decimal == 0.0:
+                actual_errors = sum(1 for a, b in zip(alice_remaining, bob_remaining_key) if a != b)
+                if actual_errors > 0:
+                    effective_qber_for_cascade = max(0.02, actual_errors / max(len(alice_remaining), 1))
+                    print(f"[Cascade] QBER=0 but {actual_errors} real mismatch(es) found in remaining key. "
+                          f"Using estimated QBER={effective_qber_for_cascade:.4f} so Cascade runs.")
+            cascade_result = run_cascade_with_trace(alice_remaining, bob_remaining_key, effective_qber_for_cascade)
             corrected_bob_key = cascade_result['corrected_key']
             cascade_stats = cascade_result['stats']
             cascade_trace = cascade_result.get('trace')
