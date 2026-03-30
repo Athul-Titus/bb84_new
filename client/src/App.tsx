@@ -7,9 +7,9 @@ import BobPanel from './components/BobPanel';
 import LogTerminal from './components/LogTerminal';
 import ChatInterface from './components/ChatInterface';
 import ProjectOverview from './components/ProjectOverview';
-import ProtocolComparison from './components/ProtocolComparison';
+import ComparativeDashboard from './comparative/ComparativeDashboard';
 import { useProject } from './context/ProjectContext';
-import { User, Download, Activity, Key, MessageSquare, ShieldCheck, Home } from 'lucide-react';
+import { User, Download, Activity, Key, MessageSquare, ShieldCheck, Home, BarChart3 } from 'lucide-react';
 
 type Tab = 'overview' | 'dashboard' | 'lab' | 'chat' | 'comparison';
 
@@ -51,6 +51,12 @@ const App: React.FC = () => {
                         disabled={!connected}
                     >
                         <MessageSquare size={20} /> Secure Chat
+                    </button>
+                    <button
+                        className={`nav-btn ${activeTab === 'comparison' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('comparison')}
+                    >
+                        <BarChart3 size={20} /> Comparative Analysis
                     </button>
                 </nav>
 
@@ -100,9 +106,9 @@ const App: React.FC = () => {
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             className="tab-view comparison-view"
-                            style={{ padding: 0 }}
+                            style={{ padding: 24 }}
                         >
-                            <ProtocolComparison onBack={() => setActiveTab('overview')} />
+                            <ComparativeDashboard />
                         </motion.div>
                     )}
 

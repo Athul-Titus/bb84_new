@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import type { Variants } from 'framer-motion';
-import { Shield, Zap, Cpu, Network, KeyRound, ArrowRight, RefreshCw } from 'lucide-react';
+import { Shield, Zap, Cpu, Network, KeyRound, ArrowRight, RefreshCw, GitBranch, Lock } from 'lucide-react';
 
 interface ProjectOverviewProps {
   onGetStarted: () => void;
@@ -114,20 +114,44 @@ const ProjectOverview: React.FC<ProjectOverviewProps> = ({ onGetStarted, onCompa
           <div style={iconWrapperStyle}>
             <Zap size={24} style={{ color: 'var(--green-success)' }} />
           </div>
-          <h3 style={cardTitleStyle}>3. Measurement, Sifting & Hardening</h3>
+          <h3 style={cardTitleStyle}>3. Measurement & Sifting</h3>
           <p style={cardTextStyle}>
             <strong>Bob</strong> measures the incoming photons using a randomly guessed sequence of bases. 
-            Alice and Bob then communicate over a classical public channel to sift out mismatched bases, run <strong>Cascade</strong> for error detection/correction,
-            and apply <strong>Privacy Amplification</strong> to derive a hardened <strong>Shared Key</strong>.
+            Alice and Bob then communicate over a classical public channel to reveal bases and keep only matched positions,
+            creating the sifted key used for post-processing.
           </p>
         </motion.div>
 
-        {/* Card 4 - The Novelty */}
+        {/* Card 4 */}
+        <motion.div variants={itemVariants} className="overview-card" style={cardStyle}>
+          <div style={iconWrapperStyle}>
+            <GitBranch size={24} style={{ color: 'var(--orange-warning)' }} />
+          </div>
+          <h3 style={cardTitleStyle}>4. Cascade Reconciliation</h3>
+          <p style={cardTextStyle}>
+            Alice and Bob execute <strong>Cascade</strong>, a parity-check reconciliation protocol that detects and corrects bit mismatches
+            through iterative block checks and targeted binary search.
+          </p>
+        </motion.div>
+
+        {/* Card 5 */}
+        <motion.div variants={itemVariants} className="overview-card" style={cardStyle}>
+          <div style={iconWrapperStyle}>
+            <Lock size={24} style={{ color: 'var(--accent-blue)' }} />
+          </div>
+          <h3 style={cardTitleStyle}>5. Privacy Amplification</h3>
+          <p style={cardTextStyle}>
+            After reconciliation, they compress the corrected key with <strong>Privacy Amplification</strong> to remove any information
+            an eavesdropper may have inferred, yielding a hardened <strong>Shared Key</strong>.
+          </p>
+        </motion.div>
+
+        {/* Card 6 - The Novelty */}
         <motion.div variants={itemVariants} className="overview-card" style={{...cardStyle, border: '1px solid var(--accent-blue)', boxShadow: '0 8px 32px rgba(88,101,242,0.1)'}}>
           <div style={{ ...iconWrapperStyle, background: 'linear-gradient(135deg, rgba(88,101,242,0.2), rgba(46,204,113,0.2))' }}>
             <RefreshCw size={24} style={{ color: 'var(--accent-blue)' }} />
           </div>
-          <h3 style={cardTitleStyle}>4. Recursive BB84 (Our Novelty)</h3>
+          <h3 style={cardTitleStyle}>6. Recursive BB84 (Our Novelty)</h3>
           <p style={cardTextStyle}>
             Standard BB84 peaks at ~50% efficiency. Our system uses a mathematically derived <strong>Rolling Bias</strong>, dynamically altering probability distributions based on the previous shared key to radically boost sifting efficiency without compromising theoretical security.
           </p>
