@@ -342,10 +342,29 @@ def set_noise_config():
         packet_loss_rate     : float 0-1
     """
     data = request.json or {}
+    _from_peer = data.pop('_from_peer', False)  # prevent sync loops
     for key in noise_config:
         if key in data:
             noise_config[key] = data[key]
     print(f"[Noise Config] Updated: {noise_config}")
+
+    # Auto-sync Eve/attack settings to peer so both devices stay aligned.
+    # Eve only takes effect on Alice's machine (qubit sender). If the user
+    # enables it on Bob's machine, we push it to Alice automatically.
+    peer_ip = noise_config.get('connected_peer_ip', '')
+    if peer_ip and not _from_peer:
+        sync_keys = ['interception_density', 'eve_active', 'network_noise_rate',
+                     'packet_loss_rate', 'channel_noise_rate', 'attack_mode']
+        payload = {k: noise_config[k] for k in sync_keys if k in noise_config}
+        payload['_from_peer'] = True  # mark to prevent echo loop
+        try:
+            import requests as req_lib
+            req_lib.post(f"http://{peer_ip}:5000/api/set_noise_config",
+                         json=payload, timeout=2)
+            print(f"[Noise Config] Auto-synced to peer {peer_ip}")
+        except Exception as e:
+            print(f"[Noise Config] Peer sync failed (non-fatal): {e}")
+
     return jsonify({"status": "ok", "noise_config": noise_config})
 
 
@@ -676,18 +695,27 @@ def compare_sample():
 
         print(f"[Cascade] QBER is {qber:.2f}%, running error correction...")
         try:
-            # FIX: When QBER=0 the Cascade protocol skips correction entirely ("qber_zero").
-            # However, the QBER sample only covers a subset of the sifted key, so the
-            # remaining bits can still contain real mismatches (index/state inconsistency).
-            # Detect those mismatches BEFORE calling Cascade and, if found, substitute a
-            # small estimated QBER so that Cascade actually runs and fixes them.
+            # FIX (3-part): When QBER=0 the Cascade protocol skips correction entirely
+            # ("qber_zero"). The QBER sample only covers a subset of the sifted key so
+            # remaining bits can still have real mismatches — especially in network/Eve
+            # mode where Eve-flipped bits can fall entirely outside the sample window.
+            #
+            # Part A: detect actual mismatches before calling Cascade.
+            # Part B: estimate QBER using the TOTAL sifted length (sample + remaining)
+            #         for a more accurate rate than using only the remaining portion.
+            # Part C: ALWAYS cap at 0.10 — Cascade aborts with ValueError above 0.11,
+            #         and with k=4 small blocks it can still find all errors at 0.10.
             effective_qber_for_cascade = qber_decimal
             if qber_decimal == 0.0:
                 actual_errors = sum(1 for a, b in zip(alice_remaining, bob_remaining_key) if a != b)
                 if actual_errors > 0:
-                    effective_qber_for_cascade = max(0.02, actual_errors / max(len(alice_remaining), 1))
-                    print(f"[Cascade] QBER=0 but {actual_errors} real mismatch(es) found in remaining key. "
-                          f"Using estimated QBER={effective_qber_for_cascade:.4f} so Cascade runs.")
+                    total_sifted_len = len(alice_remaining) + len(sample_indices_sorted)
+                    estimated_rate = actual_errors / max(total_sifted_len, 1)
+                    # Hard-cap at 0.10 to stay below Cascade's 0.11 abort threshold
+                    effective_qber_for_cascade = min(0.10, max(0.02, estimated_rate))
+                    print(f"[Cascade] QBER=0 but {actual_errors} real mismatch(es) detected "
+                          f"(estimated rate {estimated_rate:.4f}, capped at {effective_qber_for_cascade:.4f}). "
+                          f"Running Cascade to correct.")
             cascade_result = run_cascade_with_trace(alice_remaining, bob_remaining_key, effective_qber_for_cascade)
             corrected_bob_key = cascade_result['corrected_key']
             cascade_stats = cascade_result['stats']
@@ -942,6 +970,38 @@ def network_connect():
     print(f"[Network] Connection established with peer: {peer_ip}")
     
     return jsonify({"status": "success", "message": f"Connected to {peer_ip}"})
+
+
+@app.route('/api/network/sync_noise', methods=['POST'])
+def network_sync_noise():
+    """
+    Sync noise/Eve config to the peer device.
+    In 2-device mode, Eve must be active on ALICE's machine (the qubit sender)
+    because _apply_eve() runs inside get_quantum_data() on Alice's side.
+    Calling this endpoint on the PEER ensures Eve is mirrored there.
+    The frontend should call this whenever interception_density changes.
+    """
+    import requests as req_lib
+    data = request.json or {}
+    peer_ip = data.get('peer_ip') or noise_config.get('connected_peer_ip', '')
+    if not peer_ip:
+        return jsonify({"error": "No peer connected"}), 400
+
+    # Keys to sync to peer
+    sync_keys = ['interception_density', 'eve_active', 'network_noise_rate',
+                 'packet_loss_rate', 'channel_noise_rate', 'attack_mode']
+    payload = {k: noise_config[k] for k in sync_keys if k in noise_config}
+
+    try:
+        resp = req_lib.post(f"http://{peer_ip}:5000/api/set_noise_config",
+                            json=payload, timeout=3)
+        if resp.status_code == 200:
+            print(f"[Network] Noise config synced to peer {peer_ip}: {payload}")
+            return jsonify({"status": "ok", "synced": payload})
+        return jsonify({"error": f"Peer rejected sync: {resp.text}"}), 500
+    except Exception as e:
+        print(f"[Network] Noise sync failed: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/network/status', methods=['GET'])
 def network_status():
